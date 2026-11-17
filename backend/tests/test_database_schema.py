@@ -1,14 +1,10 @@
 """PostgreSQL-only tests, in a disposable schema; never modify application rows."""
 
-import os
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from pathlib import Path
-from uuid import uuid4
 
 import pytest
-from alembic.config import Config
-from sqlalchemy import BigInteger, DateTime, Numeric, create_engine, inspect, text
+from sqlalchemy import BigInteger, DateTime, Numeric, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from alembic import command
@@ -29,33 +25,6 @@ TABLES = {
     "finance_entry",
     "audit_event",
 }
-
-
-@pytest.fixture(scope="module")
-def db():
-    url = os.getenv("TEST_DATABASE_URL")
-    if not url:
-        pytest.skip("Set TEST_DATABASE_URL to a PostgreSQL test database")
-    engine = create_engine(url)
-    schema = "test_" + uuid4().hex
-    with engine.connect() as conn:
-        conn.execute(text(f'CREATE SCHEMA "{schema}"'))
-        conn.execute(text(f'SET search_path TO "{schema}"'))
-        conn.commit()
-        cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
-        cfg.attributes["connection"] = conn
-        try:
-            command.upgrade(cfg, "head")
-            conn.commit()
-            command.upgrade(cfg, "head")
-            conn.commit()
-            yield conn, cfg
-        finally:
-            conn.rollback()
-            conn.execute(text("SET search_path TO public"))
-            conn.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
-            conn.commit()
-    engine.dispose()
 
 
 @pytest.fixture
@@ -253,5 +222,8 @@ def test_engagement_contract_is_unique(rows):
 def test_contract_document_identity_is_unique(rows):
     conn, values = rows
     with pytest.raises(IntegrityError), conn.begin_nested():
-        conn.execute(Base.metadata.tables["contract"].insert().values(
-            **dict(values["contract"], id=2, status="DRAFT")))
+        conn.execute(
+            Base.metadata.tables["contract"]
+            .insert()
+            .values(**dict(values["contract"], id=2, status="DRAFT"))
+        )

@@ -29,3 +29,7 @@ GET http://127.0.0.1:8000/health returns HTTP 200 and `{"status":"ok"}`. This is
 SQLAlchemy 2 uses PostgreSQL through psycopg. Provision PostgreSQL separately. get_session closes sessions; services will own transactions for related changes. No create_all is used. Alembic uses Base metadata. Apply the initial schema with `alembic upgrade head`. Future model changes require reviewed migrations.
 
 Backend packages: core, models, schemas, repositories, services, routers. Frontend contains only pages, components, api, hooks and public directories. React and design are not implemented.
+
+## Test data
+
+See [safe PostgreSQL seed](docs/seed.md) for the explicit CLI command, guards, dataset and tests. Seed never runs automatically.
