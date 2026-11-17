@@ -33,3 +33,7 @@ Backend packages: core, models, schemas, repositories, services, routers. Fronte
 ## Test data
 
 See [safe PostgreSQL seed](docs/seed.md) for the explicit CLI command, guards, dataset and tests. Seed never runs automatically.
+
+## Catalog API
+
+See [FR030 / UC03 REST API](docs/catalog-api.md) for routes, HTTP Basic access, validation and PostgreSQL tests.
