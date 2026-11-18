@@ -9,6 +9,7 @@ from app.routers import (
     engagement,
     finance,
     finance_category,
+    report,
     venue,
 )
 from app.routers.health import router as health_router
@@ -28,6 +29,7 @@ for catalog_router in (
     contract.router,
     engagement.router,
     finance.router,
+    report.router,
 ):
     app.include_router(catalog_router)
 
