@@ -1,5 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
-import type { Page } from './api'
+import type { Direction, Page, Role } from './api'
+import { AlertCircle, LoaderCircle } from 'lucide-react'
+import { Button, Input, Textarea } from './primitives'
 
 export type Option = { value: string | number; label: string }
 export type Field = {
@@ -7,12 +9,13 @@ export type Field = {
   required?: boolean; options?: Option[]; initial?: unknown; min?: number; max?: number;
   minLength?: number; maxLength?: number; emptyLabel?: string
 }
-const defaultOptions: Option[] = [{ value: 'IN', label: 'Поступление' }, { value: 'OUT', label: 'Расход' }]
-export const directions = defaultOptions
-export const roles: Option[] = [{ value: 'MANAGER', label: 'Менеджер' }, { value: 'ADMIN', label: 'Администратор' }]
+export const directionLabels: Record<Direction, string> = { IN: 'Поступление', OUT: 'Расход' }
+export const roleLabels: Record<Role, string> = { MANAGER: 'Менеджер', ADMIN: 'Администратор' }
+export const directions: Option[] = Object.entries(directionLabels).map(([value, label]) => ({ value, label }))
+export const roles: Option[] = Object.entries(roleLabels).map(([value, label]) => ({ value, label }))
 
 export function ErrorMessage({ error }: { error: unknown }) {
-  return error ? <p role="alert" className="error">{error instanceof Error ? error.message : String(error)}</p> : null
+  return error ? <p role="alert" className="error"><AlertCircle size={17} aria-hidden="true" /><span>{error instanceof Error ? error.message : String(error)}</span></p> : null
 }
 
 export function Form({ fields, submit, onSubmit, pending, error, onCancel, children }: {
@@ -52,13 +55,13 @@ export function Form({ fields, submit, onSubmit, pending, error, onCancel, child
           minLength: field.minLength, maxLength: field.maxLength }
         return <label key={field.key}>{field.label}{field.required && ' *'}
           {field.kind === 'select' || field.kind === 'multi'
-            ? <select {...props} multiple={field.kind === 'multi'}
+            ? <select {...props} className="ui-field" multiple={field.kind === 'multi'}
                 defaultValue={field.kind === 'multi' ? (field.initial as string[] | undefined) || [] : initial}>
                 {field.kind !== 'multi' && <option value="">{field.emptyLabel || 'Выберите'}</option>}
                 {field.options?.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
               </select>
-            : field.kind === 'textarea' ? <textarea {...props} rows={2} />
-            : <input {...props} type={field.kind === 'integer' || field.kind === 'money' ? 'number' : field.kind || 'text'}
+            : field.kind === 'textarea' ? <Textarea {...props} rows={2} />
+            : <Input {...props} type={field.kind === 'integer' || field.kind === 'money' ? 'number' : field.kind || 'text'}
                 min={field.min} max={field.max} step={field.kind === 'money' ? '0.01' : undefined}
                 autoComplete={field.kind === 'password' ? 'off' : undefined} />}
         </label>
@@ -66,21 +69,21 @@ export function Form({ fields, submit, onSubmit, pending, error, onCancel, child
     </fieldset>
     {children}
     <ErrorMessage error={validation || error} />
-    <div className="actions"><button type="submit" disabled={pending}>{submit}</button>
-      {onCancel && <button type="button" onClick={onCancel} disabled={pending}>Закрыть форму</button>}
+    <div className="actions"><Button variant="default" type="submit" disabled={pending}>{pending && <LoaderCircle className="spin" size={15} aria-hidden="true" />}{submit}</Button>
+      {onCancel && <Button type="button" onClick={onCancel} disabled={pending}>Закрыть форму</Button>}
     </div>
   </form>
 }
 
 export function AsyncState({ pending, error }: { pending: boolean; error: unknown }) {
-  return <>{pending && <p role="status">Загрузка…</p>}<ErrorMessage error={error} /></>
+  return <>{pending && <p role="status" className="loading"><LoaderCircle className="spin" size={17} aria-hidden="true" />Загрузка…</p>}<ErrorMessage error={error} /></>
 }
 export function Pager<T>({ page, setOffset }: { page?: Page<T>; setOffset: (offset: number) => void }) {
   if (!page) return null
-  return <div className="actions">
+  return <div className="actions pager">
     <span>Всего: {page.total}</span>
-    {page.offset > 0 && <button onClick={() => setOffset(Math.max(0, page.offset - page.limit))}>Назад</button>}
-    {page.offset + page.limit < page.total && <button onClick={() => setOffset(page.offset + page.limit)}>Далее</button>}
+    {page.offset > 0 && <Button type="button" onClick={() => setOffset(Math.max(0, page.offset - page.limit))}>Назад</Button>}
+    {page.offset + page.limit < page.total && <Button type="button" onClick={() => setOffset(page.offset + page.limit)}>Далее</Button>}
   </div>
 }
 
@@ -100,6 +103,12 @@ export const statuses: Record<string, string> = {
   NEGOTIATING: 'На согласовании', CONFIRMED: 'Подтверждён', COMPLETED: 'Выполнено',
   CANCELLED: 'Отменено', PLANNED: 'Планируется', AGREED: 'Согласовано',
   DRAFT: 'Черновик', ACTIVE: 'Действует', CLOSED: 'Закрыт', POSTED: 'Учтена', VOID: 'Аннулирована',
+}
+export function Status({ code, label }: { code: string; label?: string }) {
+  const tone = ['CONFIRMED', 'ACTIVE', 'POSTED', 'COMPLETED', 'AGREED'].includes(code) ? 'good'
+    : ['NEGOTIATING', 'PLANNED', 'DRAFT'].includes(code) ? 'wait'
+    : ['VOID', 'CANCELLED', 'BLOCKED'].includes(code) ? 'off' : 'neutral'
+  return <span className="status-pill" data-tone={tone}>{label ?? statuses[code] ?? code}</span>
 }
 
 export function options<T extends { id: number }>(items: T[] | undefined, format: (item: T) => string): Option[] {

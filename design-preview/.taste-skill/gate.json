@@ -1,0 +1,50 @@
+{
+ "start": "2026-11-18T14:51:31.417Z",
+ "round": 0,
+ "idle": 0,
+ "errors": 1,
+ "status": "error",
+ "history": [
+  {
+   "at": "2026-11-18T16:13:40.697Z",
+   "mode": "manual",
+   "status": "error",
+   "fails": 0,
+   "round": 0,
+   "reused": false,
+   "stopHookActive": false
+  }
+ ],
+ "max": 3,
+ "marker": {
+  "page": "index.html",
+  "url": null,
+  "root": null,
+  "kind": "software",
+  "category": "Concert CRM",
+  "primary": "Новый концерт",
+  "rounds": 3,
+  "start": "2026-11-18T14:51:31.417Z",
+  "by": "gate.mjs --start"
+ },
+ "manual": true,
+ "fp": "11c8b2d35fa9df00",
+ "page": "index.html",
+ "found": {
+  "fails": [],
+  "warns": [],
+  "crashed": [
+   "consistency.mjs could not walk 1440, 390",
+   "check.mjs could not run (exit 2: check: timed out)"
+  ],
+  "seconds": {
+   "consistency": 2,
+   "layout": 240
+  }
+ },
+ "open": [],
+ "waived": [],
+ "warnCount": 0,
+ "note": "consistency.mjs could not walk 1440, 390; check.mjs could not run (exit 2: check: timed out)",
+ "at": "2026-11-18T16:13:40.698Z"
+}

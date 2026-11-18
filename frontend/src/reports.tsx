@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useOptions, useRead, url, type Concert, type Entry, type Page } from './api'
 import { AsyncState, Form, Pager, displayMoney, options, required, showTime, today, type Field } from './ui'
+import { TableView } from './primitives'
 
 type Period = { date_from: string; date_to: string; as_of: string }
 type Totals = { income: string; expenses: string; net: string }
@@ -52,19 +53,23 @@ export function Reports() {
       <MoneySummary totals={report.data} />
       <p>Плановый бюджет: {displayMoney(report.data.expense_budget)} · Фактические расходы: {displayMoney(report.data.actual_expenses)} · Остаток бюджета: {displayMoney(report.data.budget_remaining)}</p>
       <h2>Расчёты по договорам</h2>
-      <div className="table-scroll"><table><thead><tr><th>Договор</th><th>Сумма</th><th>Оплачено</th><th>Остаток</th><th>Переплата</th></tr></thead>
-        <tbody>{report.data.contracts.map((item) => <tr key={item.contract_id}>
-          <td>{item.number}</td><td>{displayMoney(item.amount)}</td><td>{displayMoney(item.net_paid)}</td>
-          <td>{displayMoney(item.unpaid)}</td><td>{displayMoney(item.overpaid)}</td>
-        </tr>)}</tbody>
-      </table></div>
+      <TableView label="Расчёты по договорам" rows={report.data.contracts} rowKey={(row) => row.contract_id}
+        empty="В отчёте нет договоров" columns={[
+          { title: 'Договор', render: (row) => row.number },
+          { title: 'Сумма', numeric: true, render: (row) => displayMoney(row.amount) },
+          { title: 'Оплачено', numeric: true, render: (row) => displayMoney(row.net_paid) },
+          { title: 'Остаток', numeric: true, render: (row) => displayMoney(row.unpaid) },
+          { title: 'Переплата', numeric: true, render: (row) => displayMoney(row.overpaid) },
+        ]} />
       <h2>Операции за период</h2>
-      <div className="table-scroll"><table><thead><tr><th>Дата</th><th>Вид</th><th>Основание</th><th>Сумма</th></tr></thead>
-        <tbody>{report.data.operations.items.map((item) => <tr key={item.id}>
-          <td>{item.occurred_on}</td><td>{item.direction === 'IN' ? 'Поступление' : 'Расход'}</td>
-          <td>{item.basis}{item.original_id != null && ` · возврат по #${item.original_id}`}</td><td>{displayMoney(item.amount)}</td>
-        </tr>)}</tbody>
-      </table></div><Pager page={report.data.operations} setOffset={setOffset} />
+      <TableView label="Операции за период" rows={report.data.operations.items} rowKey={(row) => row.id}
+        empty="За выбранный период нет операций" columns={[
+          { title: 'Дата', render: (row) => row.occurred_on },
+          { title: 'Вид', render: (row) => row.direction === 'IN' ? 'Поступление' : 'Расход' },
+          { title: 'Основание', render: (row) => <>{row.basis}{row.original_id != null && ` · возврат по #${row.original_id}`}</> },
+          { title: 'Сумма', numeric: true, render: (row) => displayMoney(row.amount) },
+        ]} />
+      <Pager page={report.data.operations} setOffset={setOffset} />
     </>}
   </section></>
 }

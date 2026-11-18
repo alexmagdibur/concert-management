@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Navigate, NavLink, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Auth, useSession } from './auth'
 import { Catalog } from './catalog'
@@ -7,28 +8,94 @@ import { ConcertCard, ConcertList, NewConcert } from './concert'
 import { Analytics, Reports } from './reports'
 import { Admin } from './admin'
 import { ErrorMessage } from './ui'
+import { Activity, CalendarDays, ChartNoAxesCombined, ChevronRight, FileText, LogOut, MapPin, Menu, Monitor, Moon, Shield, Sun, Tags, UsersRound } from 'lucide-react'
+import { Button } from './primitives'
+import '@fontsource-variable/inter'
+import '@fontsource-variable/unbounded'
 import './style.css'
 
 const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 15_000 } } })
-const managerLinks = [
-  ['/concerts', 'Концерты'], ['/venues', 'Площадки'], ['/counterparties', 'Контрагенты'],
-  ['/categories', 'Категории операций'], ['/reports', 'Финансовый отчёт'], ['/analytics', 'Аналитика'],
+const groups = [
+  { title: 'Планирование', links: [
+    { path: '/concerts', label: 'Концерты', Icon: CalendarDays },
+    { path: '/venues', label: 'Площадки', Icon: MapPin },
+    { path: '/counterparties', label: 'Контрагенты', Icon: UsersRound },
+  ] },
+  { title: 'Финансы', links: [
+    { path: '/categories', label: 'Категории операций', Icon: Tags },
+    { path: '/reports', label: 'Финансовый отчёт', Icon: FileText },
+    { path: '/analytics', label: 'Аналитика', Icon: ChartNoAxesCombined },
+  ] },
 ]
 
-function Shell({ logout, pending, error }: { logout: () => void; pending: boolean; error: unknown }) {
+type Theme = 'dark' | 'light' | 'system'
+function Application() {
+  const [theme, setTheme] = useState<Theme>(() => {
+    try {
+      const saved = localStorage.getItem('concert-theme')
+      if (saved === 'dark' || saved === 'light' || saved === 'system') return saved
+    } catch { /* storage may be disabled */ }
+    return 'dark'
+  })
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    try { localStorage.setItem('concert-theme', theme) } catch { /* storage may be disabled */ }
+  }, [theme])
+  return <Auth themeControl={<ThemeControl theme={theme} setTheme={setTheme} />}>
+    {(logout, pending, error) => <Shell logout={logout} pending={pending} error={error} theme={theme} setTheme={setTheme} />}
+  </Auth>
+}
+
+function ThemeControl({ theme, setTheme }: { theme: Theme; setTheme: (value: Theme) => void }) {
+  const Icon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor
+  return <label className="theme-control"><Icon size={17} aria-hidden="true" />
+    <select aria-label="Цветовая тема" value={theme} onChange={(event) => setTheme(event.target.value as Theme)}>
+      <option value="dark">Тёмная</option><option value="light">Светлая</option><option value="system">Как в системе</option>
+    </select>
+  </label>
+}
+
+function Shell({ logout, pending, error, theme, setTheme }: { logout: () => void; pending: boolean; error: unknown; theme: Theme; setTheme: (value: Theme) => void }) {
   const session = useSession()
+  const { pathname } = useLocation()
+  const [menuOpen, setMenuOpen] = useState(false)
   const manager = session.roles.includes('MANAGER')
   const admin = session.roles.includes('ADMIN')
   const first = manager ? '/concerts' : admin ? '/users' : '/no-access'
+  const navigation = [...(manager ? groups : []), ...(admin ? [{ title: 'Доступ', links: [{ path: '/users', label: 'Пользователи', Icon: Shield }] }] : [])]
+  const active = navigation.flatMap(({ links }) => links).find(({ path }) => pathname === path || pathname.startsWith(path + '/'))
+  const initials = session.login.slice(0, 2).toLocaleUpperCase('ru')
   return <div className="shell">
-    <aside><strong>Concert CRM</strong><p>{session.login}</p>
+    <a href="#content" className="skip-link">К содержанию</a>
+    <aside className={menuOpen ? 'sidebar sidebar-open' : 'sidebar'} id="navigation-panel">
+      <NavLink className="brand" to={first} onClick={() => setMenuOpen(false)}>
+        <span className="brand-icon"><Activity size={21} aria-hidden="true" /></span><span>Concert <b>CRM</b></span>
+      </NavLink>
       <nav aria-label="Основная навигация">
-        {manager && managerLinks.map(([path, label]) => <NavLink key={path} to={path}>{label}</NavLink>)}
-        {admin && <NavLink to="/users">Пользователи</NavLink>}
+        {navigation.map(({ title, links }) => <div className="nav-group" key={title}>
+          <span className="nav-section">{title}</span>
+          {links.map(({ path, label, Icon }) => <NavLink key={path} to={path} title={label} onClick={() => setMenuOpen(false)}>
+            <span className="nav-icon"><Icon size={18} aria-hidden="true" /></span><span className="nav-label">{label}</span>
+          </NavLink>)}
+        </div>)}
       </nav>
-      <button onClick={logout} disabled={pending}>Выйти</button><ErrorMessage error={error} />
+      <div className="sidebar-bottom"><span className="avatar" aria-hidden="true">{initials}</span><div>
+        <strong>{session.login}</strong><small>{admin && manager ? 'Менеджер · Администратор' : admin ? 'Администратор' : 'Менеджер'}</small>
+      </div></div>
     </aside>
-    <main><Routes>
+    <div className="workspace min-w-0">
+      <header className="topbar">
+        <div className="breadcrumbs">
+          <Button className="menu-toggle" type="button" size="icon" aria-label={menuOpen ? 'Закрыть меню' : 'Открыть меню'}
+            aria-expanded={menuOpen} aria-controls="navigation-panel" onClick={() => setMenuOpen(!menuOpen)}><Menu size={18} /></Button>
+          <span className="workspace-label">Мой кабинет</span><ChevronRight size={14} aria-hidden="true" />
+          <strong>{active?.label ?? 'Concert CRM'}</strong>
+        </div>
+        <div className="top-actions"><ThemeControl theme={theme} setTheme={setTheme} />
+          <Button type="button" onClick={logout} disabled={pending}><LogOut size={16} aria-hidden="true" />Выйти</Button>
+        </div>
+      </header>
+      <main id="content" tabIndex={-1} className="app-frame"><ErrorMessage error={error} /><Routes>
       {manager && <>
         <Route path="/concerts" element={<ConcertList />} />
         <Route path="/concerts/new" element={<NewConcert />} />
@@ -42,12 +109,13 @@ function Shell({ logout, pending, error }: { logout: () => void; pending: boolea
       {admin && <Route path="/users" element={<Admin />} />}
       <Route path="/no-access" element={<p>Для этой учётной записи нет доступных разделов.</p>} />
       <Route path="*" element={<Navigate to={first} replace />} />
-    </Routes></main>
+      </Routes></main>
+    </div>
   </div>
 }
 
 createRoot(document.getElementById('root')!).render(
   <QueryClientProvider client={cache}>
-    <BrowserRouter><Auth>{(logout, pending, error) => <Shell logout={logout} pending={pending} error={error} />}</Auth></BrowserRouter>
+    <BrowserRouter><Application /></BrowserRouter>
   </QueryClientProvider>,
 )

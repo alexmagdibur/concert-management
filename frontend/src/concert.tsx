@@ -3,7 +3,9 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useOptions, useRead, url, type CatalogRow, type Concert, type Page, type Responsible } from './api'
 import { Audit, Command, SaveForm } from './actions'
 import { Contracts, Engagements, Journal } from './concert-details'
-import { AsyncState, ErrorMessage, Form, Pager, displayMoney, options, required, showTime, statuses, withCurrent, type Field } from './ui'
+import { AsyncState, ErrorMessage, Form, Pager, Status, displayMoney, options, required, showTime, statuses, withCurrent, type Field } from './ui'
+import { Button, TableView } from './primitives'
+import { ArrowUpRight, CalendarDays, Plus } from 'lucide-react'
 
 const concertStatuses: Record<Concert['status'], string> = {
   NEGOTIATING: statuses.NEGOTIATING, CONFIRMED: statuses.CONFIRMED,
@@ -14,8 +16,27 @@ export function ConcertList() {
   const [filters, setFilters] = useState<Record<string, string>>({})
   const [offset, setOffset] = useState(0)
   const list = useRead<Page<Concert>>(url('/concert', { ...filters, offset }))
-  return <><h1>Концерты</h1><Link to="/concerts/new">Создать концерт</Link>
-    <section>
+  const rows = list.data?.items ?? []
+  const statusCounts = Object.entries(concertStatuses).map(([code, label]) =>
+    ({ code, label, count: rows.filter((row) => row.status === code).length }))
+  return <><div className="page-heading" data-enter><div><h1>Концерты</h1><p>Расписание и состояние концертов</p></div>
+      <Button asChild variant="default"><Link to="/concerts/new"><Plus size={17} aria-hidden="true" />Создать концерт</Link></Button>
+    </div>
+    {list.data && <div className="concert-overview">
+      <section className="overview-count"><div><h2>Концерты в выборке</h2><span className="overview-icon"><CalendarDays size={18} aria-hidden="true" /></span></div>
+        <strong>{list.data.total}</strong><small>{Object.keys(filters).length ? 'По выбранным фильтрам' : 'Всего в расписании'}</small>
+      </section>
+      <section className="overview-mix"><h2>Статусы на странице</h2>
+        {rows.length > 0 ? <div className="status-bar" aria-hidden="true">
+          {statusCounts.filter(({ count }) => count > 0).map(({ code, count }) => <div key={code} data-status={code} style={{ flex: count }} />)}
+        </div> : <p className="mix-empty">На этой странице пока нет концертов.</p>}
+        <ul className="status-legend">{statusCounts.map(({ code, label, count }) => <li key={code} data-status={code}>
+          <span aria-hidden="true" /><span>{label}</span><strong>{count}</strong>
+        </li>)}</ul>
+      </section>
+    </div>}
+    <section className="results-card">
+      <h2>Расписание</h2>
       <Form fields={[
         { key: 'starts_from', label: 'Начало периода', kind: 'datetime-local' },
         { key: 'starts_before', label: 'Конец периода (до)', kind: 'datetime-local' },
@@ -26,10 +47,13 @@ export function ConcertList() {
         setOffset(0)
       }} />
       <AsyncState pending={list.isPending} error={list.error} />
-      <div className="table-scroll"><table><thead><tr><th>Название</th><th>Начало</th><th>Состояние</th><th>Бюджет</th></tr></thead>
-        <tbody>{list.data?.items.map((row) => <tr key={row.id}><td><Link to={`/concerts/${row.id}`}>{row.name}</Link></td>
-          <td>{showTime(row.starts_at)}</td><td>{concertStatuses[row.status]}</td><td>{displayMoney(row.expense_budget)}</td></tr>)}</tbody>
-      </table></div><Pager page={list.data} setOffset={setOffset} />
+      {list.data && <TableView label="Расписание концертов" rows={rows} rowKey={(row) => row.id} empty="Концерты не найдены"
+        columns={[
+          { title: 'Название', render: (row) => <Link className="table-link" to={`/concerts/${row.id}`}>{row.name}<ArrowUpRight size={14} aria-hidden="true" /></Link> },
+          { title: 'Начало', render: (row) => showTime(row.starts_at) },
+          { title: 'Состояние', render: (row) => <Status code={row.status} label={concertStatuses[row.status]} /> },
+          { title: 'Бюджет', numeric: true, render: (row) => displayMoney(row.expense_budget) },
+        ]} />}<Pager page={list.data} setOffset={setOffset} />
     </section>
   </>
 }
@@ -79,10 +103,10 @@ export function ConcertCard() {
   const root = `/concert/${row.id}`
   return <>
     <Link to="/concerts">К списку концертов</Link>
-    <h1>{row.name}</h1><p role="status">{concertStatuses[row.status]}</p><ErrorMessage error={detail.error} />
-    <div className="actions" aria-label="Разделы концерта">
+    <div className="page-heading" data-enter><h1>{row.name}</h1><p role="status"><Status code={row.status} label={concertStatuses[row.status]} /></p></div><ErrorMessage error={detail.error} />
+    <div className="actions concert-tabs" aria-label="Разделы концерта">
       {['Общее', 'Договоры', 'Подрядчики', 'Финансовый журнал'].map((name) =>
-        <button key={name} aria-pressed={tab === name} onClick={() => setTab(name)}>{name}</button>)}
+        <Button type="button" key={name} aria-pressed={tab === name} onClick={() => setTab(name)}>{name}</Button>)}
       <Link to={`/reports?concert=${row.id}`}>Финансовый отчёт</Link>
     </div>
     {tab === 'Общее' && <><section>
@@ -91,7 +115,7 @@ export function ConcertCard() {
       <p>Площадка: {row.venue_id == null ? 'не выбрана' : `#${row.venue_id}`} · Организатор: {row.proposed_organizer_id == null ? 'не выбран' : `#${row.proposed_organizer_id}`} · Ответственный #{row.responsible_id}</p>
       {row.cancel_reason && <p>Причина отмены: {row.cancel_reason}</p>}
       {editing ? <ConcertForm concert={row} onSaved={() => setEditing(false)} />
-        : <button onClick={() => setEditing(true)}>Изменить концерт</button>}
+        : <Button type="button" onClick={() => setEditing(true)}>Изменить концерт</Button>}
       <div className="actions">
         {row.status === 'NEGOTIATING' && <Command label="Подтвердить концерт" path={root + '/confirm'} body={{ version: row.version }} />}
         {row.status === 'CONFIRMED' && <Command label="Отметить проведение" path={root + '/complete'} body={{ version: row.version }} />}

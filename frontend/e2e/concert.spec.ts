@@ -2,8 +2,10 @@ import { randomBytes } from 'node:crypto'
 import { expect, test, type Page } from '@playwright/test'
 
 async function login(page: Page, username: string, password: string) {
-  await page.getByLabel('Логин').fill(username)
+  const name = page.getByLabel('Логин')
+  await name.fill(username)
   await page.getByLabel('Пароль').fill(password)
+  await expect(name).toHaveValue(username)
   await page.getByRole('button', { name: 'Войти', exact: true }).click()
 }
 async function nav(page: Page, name: string) {
@@ -26,9 +28,23 @@ test('manager registers a concert and finances through the browser', async ({ pa
   await user.getByLabel('Роли').selectOption('MANAGER')
   await user.getByRole('button', { name: 'Создать пользователя' }).click()
   await expect(page.getByRole('heading', { name: 'Тестовый менеджер' })).toBeVisible()
+  const logoutResponse = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === '/api/auth/logout' && response.request().method() === 'POST')
   await page.getByRole('button', { name: 'Выйти' }).click()
+  expect((await logoutResponse).ok()).toBe(true)
+  await expect(page.getByRole('heading', { name: 'Вход' })).toBeVisible()
   await login(page, 'frontend_manager', password)
   await expect(page.getByRole('heading', { name: 'Концерты', exact: true })).toBeVisible()
+  for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport)
+    await expect(page.getByRole('link', { name: 'Создать концерт' })).toBeInViewport()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width)
+  }
+  await page.getByLabel('Цветовая тема').selectOption('light')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+  await page.reload()
+  await expect(page.getByLabel('Цветовая тема')).toHaveValue('light')
+  await page.getByLabel('Цветовая тема').selectOption('dark')
   await expect(page.getByRole('navigation').getByRole('link', { name: 'Пользователи' })).toHaveCount(0)
 
   const denied = await page.request.post('/api/venue', {
@@ -90,12 +106,12 @@ test('manager registers a concert and finances through the browser', async ({ pa
   await page.getByRole('button', { name: 'Финансовый журнал' }).click()
   const operation = page.getByRole('region', { name: 'Новая операция' })
   for (const [direction, category, amount, basis] of [
-    ['IN', 'Гонорар · IN', '150000', 'Оплата организатора'],
-    ['OUT', 'Транспорт · OUT', '40000', 'Транспортные расходы'],
+    ['IN', 'Гонорар · Поступление', '150000', 'Оплата организатора'],
+    ['OUT', 'Транспорт · Расход', '40000', 'Транспортные расходы'],
   ]) {
     await operation.getByLabel('Вид операции').selectOption(direction)
     await operation.getByLabel('Категория').selectOption({ label: category })
-    if (direction === 'IN') await operation.getByLabel('Договор').selectOption({ label: 'SHOW-001 · IN' })
+    if (direction === 'IN') await operation.getByLabel('Договор').selectOption({ label: 'SHOW-001 · Поступление' })
     await operation.getByLabel('Дата операции').fill('2020-01-10')
     await operation.getByLabel('Сумма операции').fill(amount)
     await operation.getByLabel('Основание').fill(basis)
@@ -132,7 +148,7 @@ test('manager registers a concert and finances through the browser', async ({ pa
   await page.getByLabel('Договор на работы').selectOption({ label: 'SERVICE-001 · 40\u202f000,00 ₽' })
   await page.getByRole('button', { name: 'Согласовать работу' }).click()
   await page.getByRole('button', { name: 'Отметить выполнение' }).click()
-  await expect(page.getByText(/Выполнено · 40/)).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Перевозка оборудования' })).toContainText('Выполнено')
 
   await page.getByRole('button', { name: 'Финансовый журнал' }).click()
   const receipt = page.getByRole('region', { name: 'Оплата организатора' })
@@ -141,11 +157,17 @@ test('manager registers a concert and finances through the browser', async ({ pa
   await receipt.getByLabel('Сумма возврата').fill('10000')
   await receipt.getByLabel('Основание возврата').fill('Частичный возврат')
   await receipt.getByRole('button', { name: 'Учесть возврат' }).click()
+  const confirmation = page.getByRole('alertdialog')
+  await confirmation.getByRole('button', { name: 'Подтвердить действие' }).click()
   await expect(page.getByRole('heading', { name: 'Частичный возврат' })).toBeVisible()
   const cost = page.getByRole('region', { name: 'Транспортные расходы' })
   await cost.getByText('Аннулирование', { exact: true }).click()
   await cost.getByLabel('Причина аннулирования').fill('Ошибочная запись')
   await cost.getByRole('button', { name: 'Аннулировать операцию' }).click()
+  await confirmation.getByRole('button', { name: 'Вернуться' }).click()
+  await expect(cost).toContainText('Учтена')
+  await cost.getByRole('button', { name: 'Аннулировать операцию' }).click()
+  await confirmation.getByRole('button', { name: 'Подтвердить действие' }).click()
   await expect(cost).toContainText('Аннулирована')
   await page.getByRole('main').getByRole('link', { name: 'Финансовый отчёт' }).click()
   await page.getByLabel('Начало периода').fill('2020-01-01')

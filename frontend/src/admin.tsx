@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useOptions, useRead, url, type Account, type Page } from './api'
 import { Audit, SaveForm } from './actions'
-import { AsyncState, Pager, required, roles, type Field } from './ui'
+import { AsyncState, Pager, Status, required, roleLabels, roles, type Field } from './ui'
 
 const createFields: Field[] = [
   required('full_name', 'ФИО', { maxLength: 150 }), required('position', 'Должность', { maxLength: 80 }),
@@ -27,7 +27,8 @@ export function Admin() {
           .map((person) => ({ value: person.employee_id, label: person.full_name })) }
       const reason = required('reason', 'Причина')
       return <section key={row.id} aria-label={row.login}>
-        <h2>{row.full_name}</h2><p>{row.login} · {row.position} · {row.active ? 'Активен' : 'Заблокирован'} · {row.roles.join(', ')}</p>
+        <h2>{row.full_name}</h2><p>{row.login} · {row.position} · <Status code={row.active ? 'ACTIVE' : 'BLOCKED'}
+          label={row.active ? 'Активен' : 'Заблокирован'} /> · {row.roles.map((role) => roleLabels[role]).join(', ')}</p>
         {row.active && staff.data && <>
           <details><summary>Изменение ролей</summary>
             <SaveForm key={`roles-${row.version}`} fields={[

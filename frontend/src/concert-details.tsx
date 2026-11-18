@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useOptions, useRead, url, type CatalogRow, type Concert, type Contract, type Engagement, type Entry, type Page } from './api'
 import { Command, SaveForm } from './actions'
-import { AsyncState, Pager, directions, displayMoney, options, required, showTime, statuses, today, withCurrent, type Field } from './ui'
+import { Button } from './primitives'
+import { AsyncState, Pager, Status, directionLabels, directions, displayMoney, options, required, showTime, today, withCurrent, type Field } from './ui'
 
 const kindLabels = { MAIN_SHOW: 'Основной договор', SERVICE: 'Договор услуг' }
 
@@ -32,10 +33,10 @@ export function Contracts({ concert }: { concert: Concert }) {
         transform={(body) => ({ ...contractDirection(body), concert_id: concert.id })} onSaved={() => setOffset(0)} />
     </section>}
     {list.data?.items.map((row) => <section key={row.id} aria-label={row.number}>
-      <h3>{row.number}</h3><p>{kindLabels[row.kind]} · {statuses[row.status] ?? row.status} · {displayMoney(row.amount)}</p>
+      <h3>{row.number}</h3><p>{kindLabels[row.kind]} · <Status code={row.status} /> · {displayMoney(row.amount)}</p>
       <p>{row.subject} · {row.signed_on}</p>
       {row.status === 'DRAFT' && <div className="actions">
-        <button onClick={() => setEditing(row.id)}>Изменить договор</button>
+        <Button type="button" onClick={() => setEditing(row.id)}>Изменить договор</Button>
         <Command label="Активировать договор" path={`/contract/${row.id}/activate`} body={{ version: row.version }} />
       </div>}
       {editing === row.id && row.status === 'DRAFT' && parties.data && <SaveForm key={row.version}
@@ -64,8 +65,8 @@ export function Engagements({ concert }: { concert: Concert }) {
       ]} path="/engagement" submit="Добавить работу" transform={(body) => ({ ...body, concert_id: concert.id })}
         onSaved={() => setOffset(0)} />
     </section>}
-    {list.data?.items.map((row) => <section key={row.id}>
-      <h3>{row.description}</h3><p>{statuses[row.status] ?? row.status} · {displayMoney(row.agreed_amount)} · {showTime(row.due_at)}</p>
+    {list.data?.items.map((row) => <section key={row.id} aria-label={row.description}>
+      <h3>{row.description}</h3><p><Status code={row.status} /> · {displayMoney(row.agreed_amount)} · {showTime(row.due_at)}</p>
       <p>Подрядчик: {parties.data?.find((item) => item.id === row.counterparty_id)?.name ?? `#${row.counterparty_id}`}
         {row.contract_id != null && ` · Договор: ${contracts.data?.find((item) => item.id === row.contract_id)?.number ?? '#' + row.contract_id}`}</p>
       {row.cancel_reason && <p>Причина отмены: {row.cancel_reason}</p>}
@@ -100,9 +101,10 @@ function entryFields(categories: CatalogRow[], contracts: Contract[], row?: Entr
   return [
     required('direction', 'Вид операции', { kind: 'select', options: directions, initial: row?.direction }),
     required('category_id', 'Категория', { kind: 'select', initial: row?.category_id,
-      options: withCurrent(options(categories, (item) => `${item.name} · ${item.normal_direction}`), row?.category_id) }),
+      options: withCurrent(options(categories, (item) => item.normal_direction
+        ? `${item.name} · ${directionLabels[item.normal_direction]}` : item.name), row?.category_id) }),
     { key: 'contract_id', label: 'Договор', kind: 'select', emptyLabel: 'Без договора', initial: row?.contract_id,
-      options: withCurrent(options(contracts, (item) => `${item.number} · ${item.direction}`), row?.contract_id) },
+      options: withCurrent(options(contracts, (item) => `${item.number} · ${directionLabels[item.direction]}`), row?.contract_id) },
     required('occurred_on', 'Дата операции', { kind: 'date', initial: row?.occurred_on ?? today() }),
     required('amount', 'Сумма операции', { kind: 'money', min: .01, max: 999999999999.99, initial: row?.amount }),
     required('basis', 'Основание', { kind: 'textarea', initial: row?.basis }),
@@ -129,11 +131,11 @@ export function Journal({ concert }: { concert: Concert }) {
     </section>}
     {list.data?.items.map((row) => <section key={row.id} aria-label={row.basis}>
       <h3>{row.basis}</h3>
-      <p>{row.direction === 'IN' ? 'Поступление' : 'Расход'} · {displayMoney(row.amount)} · {row.occurred_on} · {statuses[row.status]}</p>
+      <p>{row.direction === 'IN' ? 'Поступление' : 'Расход'} · {displayMoney(row.amount)} · {row.occurred_on} · <Status code={row.status} /></p>
       {row.original_id !== null && <p>Возврат по операции #{row.original_id}</p>}
       {row.void_reason && <p>Причина аннулирования: {row.void_reason}</p>}
       {row.status === 'DRAFT' && <>
-        <div className="actions"><button onClick={() => setEditing(row.id)}>Изменить черновик</button>
+        <div className="actions"><Button type="button" onClick={() => setEditing(row.id)}>Изменить черновик</Button>
           <KeyedForm fields={[]} path={`/finance/${row.id}/post`} submit="Провести черновик" extra={{ version: row.version }} />
         </div>
         {editing === row.id && categories.data && contracts.data && <SaveForm key={row.version}

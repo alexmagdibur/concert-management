@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError, api, setSession, type Session } from './api'
 import { AsyncState, Form, required } from './ui'
+import { Activity } from 'lucide-react'
+import { Button } from './primitives'
 
 const sessionKey = ['session']
 const Current = createContext<Session | null>(null)
@@ -11,7 +13,10 @@ export function useSession() {
   return session
 }
 
-export function Auth({ children }: { children: (logout: () => void, pending: boolean, error: unknown) => ReactNode }) {
+export function Auth({ children, themeControl }: {
+  children: (logout: () => void, pending: boolean, error: unknown) => ReactNode
+  themeControl?: ReactNode
+}) {
   const cache = useQueryClient()
   const session = useQuery({
     queryKey: sessionKey,
@@ -53,14 +58,17 @@ export function Auth({ children }: { children: (logout: () => void, pending: boo
   })
   if (session.isPending || session.error) return <main><h1>Concert CRM</h1>
     <AsyncState pending={session.isPending} error={session.error} />
-    {session.error && <button onClick={() => void session.refetch()}>Повторить</button>}
+    {session.error && <Button type="button" onClick={() => void session.refetch()}>Повторить</Button>}
   </main>
-  if (!session.data) return <main className="login"><h1>Concert CRM</h1>
-    <h2>Вход</h2><Form fields={[
+  if (!session.data) return <div className="login-shell">
+    <div className="login-theme">{themeControl}</div>
+    <main className="login">
+    <div className="login-brand"><span className="brand-icon"><Activity size={22} aria-hidden="true" /></span>Concert CRM</div>
+    <h1>Вход</h1><Form fields={[
       required('login', 'Логин', { maxLength: 80 }),
       required('password', 'Пароль', { kind: 'password', maxLength: 256 }),
     ]} submit="Войти" onSubmit={(data) => login.mutate(data)} pending={login.isPending} error={login.error} />
-  </main>
+  </main></div>
   return <Current.Provider value={session.data}>
     {children(() => logout.mutate(), logout.isPending, logout.error)}
   </Current.Provider>

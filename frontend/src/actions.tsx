@@ -1,6 +1,17 @@
 import { useState } from 'react'
 import { useRead, useWrite, type Page } from './api'
 import { AsyncState, ErrorMessage, Form, Pager, showTime, type Field } from './ui'
+import { Button, ConfirmDialog } from './primitives'
+
+const confirmations: Record<string, string> = {
+  archive: 'Запись исчезнет из списка действующих. Связи с другими записями сохранятся.',
+  cancel: 'Статус будет изменён на «Отменено». Проверьте причину отмены.',
+  void: 'Операция останется в истории и будет исключена из финансовых итогов.',
+  refund: 'Возврат появится в финансовом журнале отдельной операцией.',
+  block: 'Пользователь потеряет доступ. Его активные сессии завершатся.',
+  roles: 'Новые роли изменят права пользователя.',
+}
+const confirmationFor = (path: string) => confirmations[path.split('/').at(-1) ?? '']
 
 export function SaveForm<T>({ fields, submit, path, method, transform, onSaved, onCancel }: {
   fields: Field[]; submit: string; path: string; method?: string;
@@ -9,20 +20,34 @@ export function SaveForm<T>({ fields, submit, path, method, transform, onSaved, 
 }) {
   const mutation = useWrite<T>()
   const [reset, setReset] = useState(0)
-  return <Form key={reset} fields={fields} submit={submit} pending={mutation.isPending}
+  const [confirmation, setConfirmation] = useState<Record<string, unknown> | null>(null)
+  const description = confirmationFor(path)
+  const save = (body: Record<string, unknown>) => mutation.mutate({ path, method, body }, {
+    onSuccess: (value) => { setReset((n) => n + 1); onSaved?.(value) },
+  })
+  return <><Form key={reset} fields={fields} submit={submit} pending={mutation.isPending}
     error={mutation.error} onCancel={onCancel}
-    onSubmit={(data) => mutation.mutate({ path, method, body: transform?.(data) ?? data }, {
-      onSuccess: (value) => { setReset((n) => n + 1); onSaved?.(value) },
-    })}>
+    onSubmit={(data) => {
+      const body = transform?.(data) ?? data
+      if (description) setConfirmation(body)
+      else save(body)
+    }}>
     {mutation.isSuccess && <p role="status">Сохранено</p>}
-  </Form>
+  </Form>{description && <ConfirmDialog open={confirmation !== null}
+    setOpen={(open) => { if (!open) setConfirmation(null) }} title={submit} description={description}
+    confirm={() => { if (confirmation !== null) save(confirmation) }} />}
+  </>
 }
 
 export function Command({ label, path, body }: { label: string; path: string; body: unknown }) {
   const mutation = useWrite()
-  return <div><button type="button" disabled={mutation.isPending} onClick={() => mutation.mutate({ path, body })}>
+  const [open, setOpen] = useState(false)
+  const description = confirmationFor(path)
+  const execute = () => mutation.mutate({ path, body })
+  return <div><Button type="button" disabled={mutation.isPending} onClick={() => description ? setOpen(true) : execute()}>
     {label}
-  </button><ErrorMessage error={mutation.error} /></div>
+  </Button><ErrorMessage error={mutation.error} />{description &&
+    <ConfirmDialog open={open} setOpen={setOpen} description={description} title={label} confirm={execute} />}</div>
 }
 
 export function Audit({ kind, id }: { kind: string; id: number }) {

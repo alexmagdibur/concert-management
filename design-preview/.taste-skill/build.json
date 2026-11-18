@@ -1,0 +1,11 @@
+{
+ "page": "index.html",
+ "url": null,
+ "root": null,
+ "kind": "software",
+ "category": "Concert CRM",
+ "primary": "Новый концерт",
+ "rounds": 3,
+ "start": "2026-11-18T14:51:31.417Z",
+ "by": "gate.mjs --start"
+}

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useRead, url, type CatalogRow, type Page } from './api'
 import { Command, SaveForm } from './actions'
-import { AsyncState, Form, Pager, directions, required, type Field } from './ui'
+import { Button } from './primitives'
+import { AsyncState, Form, Pager, directionLabels, directions, required, type Field } from './ui'
 
 const definitions = {
   venue: { title: 'Площадки', fields: [
@@ -43,9 +44,10 @@ export function Catalog({ kind }: { kind: CatalogKind }) {
       {list.data?.items.map((row) => <section key={row.id} aria-label={row.name}>
         <h3>{row.name}</h3>
         {fields.filter((field) => field.key !== 'name' && row[field.key] != null).map((field) =>
-          <p key={field.key}>{field.label}: {String(row[field.key])}</p>)}
+          <p key={field.key}>{field.label}: {field.key === 'normal_direction' && row.normal_direction
+            ? directionLabels[row.normal_direction] : String(row[field.key])}</p>)}
         {!archived && <div className="actions">
-          <button onClick={() => setEditing(row.id)}>Изменить</button>
+          <Button type="button" onClick={() => setEditing(row.id)}>Изменить</Button>
           <Command label="Архивировать" path={`/${kind}/${row.id}/archive`} body={{ version: row.version }} />
         </div>}
         {editing === row.id && !archived && <SaveForm key={row.version}
