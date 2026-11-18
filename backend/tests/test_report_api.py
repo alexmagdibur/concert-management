@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 import pytest
+from auth_support import NO_SESSION, session_headers
 from concert_support import STAMP, add_contract, payload
 from test_finance_api import operation, setup_records
 
@@ -326,9 +327,11 @@ def test_report_validation_and_access(concert_api):
     for path in paths:
         assert client.get(path, params=PERIOD | {"date_to": "2019-01-01"}).status_code == 422
         assert client.get(path, params=PERIOD | {"as_of": "2020-02-30"}).status_code == 422
-        assert client.get(path, params=PERIOD, auth=None).status_code == 401
+        assert client.get(path, params=PERIOD, headers=NO_SESSION).status_code == 401
         assert (
-            client.get(path, params=PERIOD, auth=("test_ADMIN", data["password"])).status_code
+            client.get(
+                path, params=PERIOD, headers=session_headers("test_ADMIN", data["password"])
+            ).status_code
             == 403
         )
     assert client.get(paths[-1], params=PERIOD).status_code == 409

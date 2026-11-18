@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from auth_support import NO_SESSION, login, session_headers, sign_in
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -70,8 +71,8 @@ def api(db):
 
     app.dependency_overrides[get_session] = override_session
     try:
-        with TestClient(app) as client:
-            client.auth = ("test_MANAGER", password)
+        with TestClient(app, base_url="https://testserver") as client:
+            sign_in(client, "test_MANAGER", password)
             yield client, setup, identities, password
     finally:
         app.dependency_overrides.pop(get_session, None)
@@ -163,13 +164,13 @@ def test_duplicate_updates_and_archived_duplicates(api, module, payload, model):
 
 
 @pytest.mark.parametrize("module,payload,model", CASES)
-def test_http_basic_and_roles(api, module, payload, model):
+def test_sessions_and_roles(api, module, payload, model):
     client, session, identities, password = api
     root = "/" + module
-    assert client.get(root, auth=None).status_code == 401
-    assert client.post(root, json=payload, auth=("test_MANAGER", "wrong")).status_code == 401
-    assert client.get(root, auth=("unknown", password)).status_code == 401
-    assert client.get(root, auth=("test_ADMIN", password)).status_code == 403
+    assert client.get(root, headers=NO_SESSION).status_code == 401
+    assert login(client, "test_MANAGER", "wrong").status_code == 401
+    assert login(client, "unknown", password).status_code == 401
+    assert client.get(root, headers=session_headers("test_ADMIN", password)).status_code == 403
     account = session.get(Account, identities["MANAGER"][0])
     account.active = False
     session.commit()

@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 import pytest
+from auth_support import NO_SESSION, session_headers, sign_in
 from concert_support import STAMP, add_contract, payload
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -162,12 +163,14 @@ def test_confirmation_requires_real_prerequisites(concert_api, problem):
         session.get(Account, data["ADMIN"]["account"]).active = True
         manager_role = session.scalar(select(Role).where(Role.code == "MANAGER"))
         session.add(AccountRole(account_id=data["ADMIN"]["account"], role_id=manager_role.id))
-        client.auth = ("test_ADMIN", data["password"])
+        session.commit()
+        sign_in(client, "test_ADMIN", data["password"])
     if problem == "inactive_account":
         session.get(Account, data["MANAGER"]["account"]).active = False
         manager_role = session.scalar(select(Role).where(Role.code == "MANAGER"))
         session.add(AccountRole(account_id=data["ADMIN"]["account"], role_id=manager_role.id))
-        client.auth = ("test_ADMIN", data["password"])
+        session.commit()
+        sign_in(client, "test_ADMIN", data["password"])
     session.commit()
     response = client.post(f"/concert/{row['id']}/confirm", json={"version": 1})
     assert response.status_code == 409, response.text
@@ -404,8 +407,11 @@ def test_search_period_city_pagination_and_authorization(concert_api):
         == 404
     )
     assert client.post("/concert/999999999/confirm", json={"version": 1}).status_code == 404
-    assert client.get("/concert", auth=None).status_code == 401
-    assert client.get("/concert", auth=("test_ADMIN", data["password"])).status_code == 403
+    assert client.get("/concert", headers=NO_SESSION).status_code == 401
+    assert (
+        client.get("/concert", headers=session_headers("test_ADMIN", data["password"])).status_code
+        == 403
+    )
 
 
 def test_transition_audit_failure_rolls_back_state(concert_api, monkeypatch):

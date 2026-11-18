@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from time import monotonic, sleep
 
 import pytest
+from auth_support import sign_in
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
@@ -190,8 +191,8 @@ def test_refund_race_over_api(race, same_key):
 
     app.dependency_overrides[get_session] = override
     try:
-        with TestClient(app) as client:
-            client.auth = ("test_MANAGER", data["password"])
+        with TestClient(app, base_url="https://testserver") as client:
+            sign_in(client, "test_MANAGER", data["password"])
             concert, categories = setup_records(client, data)
             source = register(client, concert, categories["IN"])
             url = f"/finance/{source['id']}/refund"

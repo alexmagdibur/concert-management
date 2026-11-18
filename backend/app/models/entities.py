@@ -44,6 +44,7 @@ class Account(Base):
     login = Column(String(80), nullable=False, unique=True)
     password_hash = Column(Text, nullable=False)
     active = Column(Boolean, nullable=False)
+    session_tokens = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     __table_args__ = ()
 
 

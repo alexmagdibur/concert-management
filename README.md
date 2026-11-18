@@ -36,8 +36,12 @@ See [safe PostgreSQL seed](docs/seed.md) for the explicit CLI command, guards, d
 
 ## Catalog API
 
-See [FR030 / UC03 REST API](docs/catalog-api.md) for routes, HTTP Basic access, validation and PostgreSQL tests.
+See [FR030 / UC03 REST API](docs/catalog-api.md) for routes, session access, validation and PostgreSQL tests.
 
 ## Concert API
 
 See [FR040 / FR050 / UC04 concert API](docs/concert-api.md) for lifecycle, requests, search and PostgreSQL concurrency guarantees.
+
+## Accounts and sessions
+
+See [access API](docs/access-api.md) for initial administrator setup, cookies, CSRF and audit.

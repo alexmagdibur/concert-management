@@ -71,6 +71,7 @@ def seed_plan() -> dict[str, list[dict]]:
             login=f"seed_v1_{role.lower()}",
             password_hash=_unusable_password_hash(),
             active=True,
+            session_tokens={},
         )
         add("role", id=identity, code=role, name=role)
         add("account_role", account_id=identity, role_id=identity)

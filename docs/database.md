@@ -4,7 +4,9 @@ Source: NIRS section 1.10, pages 43-51, figure 14a-14d. Extracted reference imag
 
 Exactly 12 domain/access/history tables: employee, account, role, account_role, venue, counterparty, concert, engagement, contract, finance_category, finance_entry, audit_event. Alembic additionally owns its technical alembic_version table.
 
-All identifiers/FKs and version are bigint. Money is numeric(14,2), Python Decimal. All timestamp fields use time zone; signed_on and occurred_on are date. JSON snapshots are jsonb. Every field is NOT NULL unless marked optional in the document. Eight mutable domain tables include created_at, updated_at and version. Values must be supplied explicitly; no undocumented server defaults are introduced.
+All identifiers/FKs and version are bigint. Money is numeric(14,2), Python Decimal. All timestamp fields use time zone; signed_on and occurred_on are date. JSON snapshots are jsonb. Domain field nullability follows NIRS. Eight mutable domain tables include created_at, updated_at and version.
+
+Migration 3f52e6da10ac adds the technical account.session_tokens JSONB field with an empty object as its default. The field stores session digests and expiration times. See [access API](access-api.md).
 
 Foreign keys use ON DELETE RESTRICT throughout, including original finance entries. No cascade deletion. account_role has a composite primary key.
 

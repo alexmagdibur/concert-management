@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 from alembic.config import Config
+from auth_support import sign_in
 from concert_support import prepare
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
@@ -55,8 +56,8 @@ def concert_api(db):
 
     app.dependency_overrides[get_session] = override
     try:
-        with TestClient(app) as client:
-            client.auth = ("test_MANAGER", data["password"])
+        with TestClient(app, base_url="https://testserver") as client:
+            sign_in(client, "test_MANAGER", data["password"])
             yield client, setup, data
     finally:
         app.dependency_overrides.pop(get_session, None)

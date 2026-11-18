@@ -1,6 +1,6 @@
 # Concert API: FR040, FR050, UC04
 
-The module uses the existing concert, contract, employee/account/role, venue, counterparty and audit_event tables. Access uses the PostgreSQL-backed HTTP Basic MANAGER dependency. Use the [contract API](contract-api.md) to create and activate the main contract before confirming a concert.
+The module uses the existing concert, contract, employee/account/role, venue, counterparty and audit_event tables. Access uses the PostgreSQL-backed MANAGER session dependency. Use the [contract API](contract-api.md) to create and activate the main contract before confirming a concert.
 
 ## Routes
 

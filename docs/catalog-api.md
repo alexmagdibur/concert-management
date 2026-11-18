@@ -54,18 +54,10 @@ Updates/archive lock the row and compare version (409 on stale writes). Every su
 
 ## Access
 
-As explicitly agreed for this task, HTTP Basic checks actual PostgreSQL account/password, active account and employee, and MANAGER role. ADMIN alone is insufficient; combined roles are supported. Hash format is salted scrypt compatible with the existing seed. Malformed/unsupported hashes are rejected. There are no hardcoded credentials or account-ID headers. Use HTTPS outside localhost.
-
-Seed accounts have random discarded passwords: seed does not publish usable login credentials. Use a separately provisioned manager account with a known password and a hash produced by app.core.security.hash_password. Account provisioning and full session login/logout (FR010) remain separate tasks; HTTP Basic is not a session implementation.
-
-FastAPI Swagger at /docs offers the Authorize button. Example curl (prompts for the password; replace manager login):
-
-```powershell
-curl.exe -u YOUR_MANAGER_LOGIN http://127.0.0.1:8001/venue
-```
+Catalog endpoints require a MANAGER session. See [access API](access-api.md) for login, CSRF and manager provisioning.
 
 ## Errors and verification
 
 401 missing/invalid credentials or inactive account/employee; 403 missing MANAGER role; 404 missing record; 409 duplicate/version conflict; 422 request validation; 405 DELETE unsupported. Unexpected database failures propagate as failures, never fake successes.
 
-Tests use real PostgreSQL in Alembic-managed disposable schemas. They cover actual Basic verification, roles/blocked employees, CRUD, all three catalogs, pagination, literal/Unicode search, validation, duplicates, stale versions, audit atomicity, and archival of records referenced by real concert/contract/finance rows. No SQLite or mock storage is used.
+Tests use real PostgreSQL in Alembic-managed disposable schemas. They cover session authentication, roles/blocked employees, CRUD, all three catalogs, pagination, literal/Unicode search, validation, duplicates, stale versions, audit atomicity, and archival of records referenced by real concert/contract/finance rows. No SQLite or mock storage is used.

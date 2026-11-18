@@ -5,9 +5,11 @@ from time import monotonic, sleep
 import httpx
 import pytest
 import uvicorn
+from auth_support import NO_SESSION, session_headers, sign_in
 from concert_support import payload
 from sqlalchemy import func, select
 
+from app.core.config import Settings, get_settings
 from app.main import app
 from app.models.entities import AuditEvent, FinanceEntry
 
@@ -61,7 +63,12 @@ def audit(session, identity):
     ).all()
 
 
-def test_engagement_lifecycle_over_tcp(concert_api):
+def test_engagement_lifecycle_over_tcp(concert_api, monkeypatch):
+    monkeypatch.setitem(
+        app.dependency_overrides,
+        get_settings,
+        lambda: Settings(app_env="test", session_cookie_secure=False),
+    )
     _, session, data = concert_api
     config = uvicorn.Config(app, loop="asyncio", lifespan="off", log_level="warning")
     server = uvicorn.Server(config)
@@ -77,10 +84,10 @@ def test_engagement_lifecycle_over_tcp(concert_api):
             assert server.started, "Uvicorn did not start"
             with httpx.Client(
                 base_url=f"http://127.0.0.1:{port}",
-                auth=("test_MANAGER", data["password"]),
                 timeout=5,
                 trust_env=False,
             ) as client:
+                sign_in(client, "test_MANAGER", data["password"])
                 concert = create_concert(client, data)
                 contract = create_contract(client, concert, data["party2"])
                 assert (
@@ -227,8 +234,10 @@ def test_scope_validation_and_permissions(concert_api):
         assert client.post("/engagement", json=body | bad).status_code == 422
     assert client.get("/concert/999999/engagement").status_code == 404
     assert client.post("/engagement/999999/complete", json={"version": 1}).status_code == 404
-    assert client.post("/engagement", json=body, auth=None).status_code == 401
+    assert client.post("/engagement", json=body, headers=NO_SESSION).status_code == 401
     assert (
-        client.post("/engagement", json=body, auth=("test_ADMIN", data["password"])).status_code
+        client.post(
+            "/engagement", json=body, headers=session_headers("test_ADMIN", data["password"])
+        ).status_code
         == 403
     )

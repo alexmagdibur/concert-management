@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 import pytest
+from auth_support import NO_SESSION, session_headers
 from concert_support import STAMP, payload
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -195,5 +196,8 @@ def test_references_access_and_invalid_patches(concert_api):
         assert client.patch(endpoint, json={"version": 1} | changes).status_code == 422
     assert client.get(endpoint).json() == draft
     assert client.get("/contract/999999").status_code == 404
-    assert client.get("/contract", auth=None).status_code == 401
-    assert client.get("/contract", auth=("test_ADMIN", data["password"])).status_code == 403
+    assert client.get("/contract", headers=NO_SESSION).status_code == 401
+    assert (
+        client.get("/contract", headers=session_headers("test_ADMIN", data["password"])).status_code
+        == 403
+    )

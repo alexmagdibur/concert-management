@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from time import monotonic, sleep
 
 import pytest
+from auth_support import NO_SESSION, session_headers, sign_in
 from concert_support import payload
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select, text
@@ -160,9 +161,12 @@ def test_invalid_finance_links_and_payload(concert_api):
     ):
         assert client.post("/finance", json=body | changes).status_code == 422, changes
     assert client.post("/finance", json=operation(concert, categories["IN"])).status_code == 422
-    assert client.post("/finance", json=body, auth=None).status_code == 401
+    assert client.post("/finance", json=body, headers=NO_SESSION).status_code == 401
     assert (
-        client.post("/finance", json=body, auth=("test_ADMIN", data["password"])).status_code == 403
+        client.post(
+            "/finance", json=body, headers=session_headers("test_ADMIN", data["password"])
+        ).status_code
+        == 403
     )
     archived = client.post(f"/finance_category/{categories['IN']}/archive", json={"version": 1})
     assert archived.status_code == 200
@@ -219,8 +223,8 @@ def test_same_key_race_over_api(race, mode):
 
     app.dependency_overrides[get_session] = override
     try:
-        with TestClient(app) as client:
-            client.auth = ("test_MANAGER", data["password"])
+        with TestClient(app, base_url="https://testserver") as client:
+            sign_in(client, "test_MANAGER", data["password"])
             concert, categories = setup_records(client, data)
             body = operation(concert, categories["IN"])
             url = "/finance"
