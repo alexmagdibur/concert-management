@@ -10,9 +10,11 @@ from app.schemas.catalog import Page
 from app.schemas.finance import (
     FinanceCreate,
     FinancePost,
+    FinanceRefund,
     FinanceRegister,
     FinanceResponse,
     FinanceStatus,
+    FinanceTotals,
     FinanceUpdate,
     FinanceVoid,
 )
@@ -36,6 +38,11 @@ def list_finance(
     return FinanceService(session).list_for_concert(
         concert_id, status=status, limit=limit, offset=offset
     )
+
+
+@router.get("/concert/{concert_id}/finance/totals", response_model=FinanceTotals)
+def finance_totals(concert_id: ID, session: DB, manager: Manager):
+    return FinanceService(session).totals(concert_id)
 
 
 @router.post(
@@ -69,3 +76,18 @@ def post_finance(identity: ID, data: FinancePost, session: DB, manager: Manager)
 @router.post("/finance/{identity}/void", response_model=FinanceResponse)
 def void_finance(identity: ID, data: FinanceVoid, session: DB, manager: Manager):
     return FinanceService(session).void(identity, data, manager.id)
+
+
+@router.post(
+    "/finance/{identity}/refund",
+    response_model=FinanceResponse,
+    status_code=201,
+    responses={200: {"model": FinanceResponse}},
+)
+def refund_finance(
+    identity: ID, data: FinanceRefund, response: Response, session: DB, manager: Manager
+):
+    entry, created = FinanceService(session).refund(identity, data, manager.id)
+    if not created:
+        response.status_code = 200
+    return entry

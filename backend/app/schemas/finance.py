@@ -46,6 +46,19 @@ class FinanceVoid(Input):
     reason: str = Field(min_length=1)
 
 
+class FinanceRefund(Input):
+    occurred_on: CalendarDate
+    amount: Amount
+    basis: str = Field(min_length=1)
+    request_key: RequestKey
+
+
+class FinanceTotals(BaseModel):
+    income: Decimal
+    expenses: Decimal
+    net: Decimal
+
+
 class FinanceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

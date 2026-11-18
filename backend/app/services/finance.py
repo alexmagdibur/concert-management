@@ -11,8 +11,10 @@ from app.repositories.finance import FinanceRepository
 from app.schemas.finance import (
     FinanceCreate,
     FinancePost,
+    FinanceRefund,
     FinanceRegister,
     FinanceResponse,
+    FinanceTotals,
     FinanceUpdate,
     FinanceVoid,
 )
@@ -119,7 +121,11 @@ class FinanceService:
             request_key=key,
         )
         self.repository.add(row)
-        return self._save(row, actor, "POST" if key else "CREATE", None)
+        if row.original_id is not None:
+            action = "REFUND"
+        else:
+            action = "POST" if key else "CREATE"
+        return self._save(row, actor, action, None)
 
     def register(self, data: FinanceRegister, actor: int) -> tuple[FinanceResponse, bool]:
         with self._write():
@@ -162,7 +168,11 @@ class FinanceService:
             self.repository.lock_request_key(data.request_key)
             existing = self.repository.by_request_key(data.request_key)
             if existing is not None:
-                if existing.id != identity or existing.status not in {"POSTED", "VOID"}:
+                if (
+                    existing.id != identity
+                    or existing.original_id is not None
+                    or existing.status not in {"POSTED", "VOID"}
+                ):
                     raise FinanceError(409, "Request key is already in use for another operation")
                 result = FinanceResponse.model_validate(existing)
                 self.session.commit()
@@ -178,6 +188,10 @@ class FinanceService:
 
     def void(self, identity: int, data: FinanceVoid, actor: int) -> FinanceResponse:
         with self._write():
+            entry = self.repository.get(identity)
+            if entry is not None and entry.original_id is not None:
+                # Changing the sum of posted refunds shares the original's lock.
+                self.repository.get(entry.original_id, lock=True)
             row = self._locked(identity, data.version, "POSTED")
             if self.repository.has_posted_refunds(identity):
                 raise FinanceError(409, "Cannot void an entry with posted refunds")
@@ -187,6 +201,51 @@ class FinanceService:
             row.version += 1
             row.updated_at = datetime.now(UTC)
             return self._save(row, actor, "VOID", before, reason=data.reason)
+
+    def refund(
+        self, identity: int, data: FinanceRefund, actor: int
+    ) -> tuple[FinanceResponse, bool]:
+        with self._write():
+            self.repository.lock_request_key(data.request_key)
+            values = data.model_dump(exclude={"request_key"})
+            existing = self.repository.by_request_key(data.request_key)
+            if existing is not None:
+                if (
+                    existing.original_id != identity
+                    or existing.created_by != actor
+                    or existing.status not in {"POSTED", "VOID"}
+                    or any(getattr(existing, name) != value for name, value in values.items())
+                ):
+                    raise FinanceError(409, "Request key is already in use for another operation")
+                result = FinanceResponse.model_validate(existing)
+                self.session.commit()
+                return result, False
+
+            # Under READ COMMITTED the sum reads the preceding lock holder's committed refunds.
+            original = self.repository.get(identity, lock=True)
+            if original is None:
+                raise FinanceError(404, "Finance entry not found")
+            if original.status != "POSTED" or original.original_id is not None:
+                raise FinanceError(409, "Only an original POSTED entry can be refunded")
+            if not original.occurred_on <= data.occurred_on <= datetime.now(UTC).date():
+                raise FinanceError(422, "Refund date must be between the original date and today")
+            remaining = original.amount - self.repository.posted_refund_sum(identity)
+            if data.amount > remaining:
+                raise FinanceError(409, f"Refund exceeds available amount: {max(remaining, 0):.2f}")
+            values.update(
+                original_id=original.id,
+                concert_id=original.concert_id,
+                contract_id=original.contract_id,
+                category_id=original.category_id,
+                direction="OUT" if original.direction == "IN" else "IN",
+            )
+            return self._create(values, actor, key=data.request_key), True
+
+    def totals(self, concert_id: int) -> FinanceTotals:
+        if self.concerts.get(concert_id) is None:
+            raise FinanceError(404, "Concert not found")
+        income, expenses = self.repository.posted_totals(concert_id)
+        return FinanceTotals(income=income, expenses=expenses, net=income - expenses)
 
     def list_for_concert(self, concert_id: int, *, status: str | None, limit: int, offset: int):
         if self.concerts.get(concert_id) is None:
