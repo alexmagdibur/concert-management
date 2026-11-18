@@ -3,8 +3,9 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from app.models.entities import AuditEvent, Counterparty, Employee, Venue
+from app.models.entities import AuditEvent, Contract, Counterparty, Employee, Venue
 from app.repositories.concert import ConcertRepository
+from app.repositories.contract import ContractRepository
 from app.schemas.concert import (
     ConcertCancel,
     ConcertCreate,
@@ -25,6 +26,7 @@ class ConcertService:
     def __init__(self, session: Session):
         self.session = session
         self.repository = ConcertRepository(session)
+        self.contracts = ContractRepository(session)
 
     @contextmanager
     def _write(self):
@@ -63,14 +65,8 @@ class ConcertService:
                 raise ConcertError(409, f"{field} cannot select an archived record")
 
     @staticmethod
-    def _validate_main_organizer(values: dict, contracts):
-        if contracts and (
-            values["proposed_organizer_id"] is None
-            or any(
-                contract.counterparty_id != values["proposed_organizer_id"]
-                for contract in contracts
-            )
-        ):
+    def _validate_main_organizer(values: dict, contract: Contract | None):
+        if contract is not None and contract.counterparty_id != values["proposed_organizer_id"]:
             raise ConcertError(409, "Main contract must match the concert organizer")
 
     def _validate_confirmed(self, values: dict, identity: int):
@@ -80,11 +76,10 @@ class ConcertService:
             raise ConcertError(409, "Confirmation requires an existing venue")
         if not self.repository.responsible_is_manager(values["responsible_id"]):
             raise ConcertError(409, "Confirmation requires an active responsible manager")
-        contracts = self.repository.active_main_contracts(identity)
-        if len(contracts) != 1:
+        contract = self.contracts.active_main(identity)
+        if contract is None:
             raise ConcertError(409, "Confirmation requires exactly one ACTIVE MAIN_SHOW contract")
-        contract = contracts[0]
-        self._validate_main_organizer(values, contracts)
+        self._validate_main_organizer(values, contract)
         if contract.direction != "IN":
             raise ConcertError(409, "Main show contract must have IN direction")
         if (
@@ -158,9 +153,7 @@ class ConcertService:
             if row.status == "CONFIRMED":
                 self._validate_confirmed(candidate, identity)
             elif "proposed_organizer_id" in changed:
-                self._validate_main_organizer(
-                    candidate, self.repository.active_main_contracts(identity)
-                )
+                self._validate_main_organizer(candidate, self.contracts.active_main(identity))
             if row.status == "COMPLETED":
                 if candidate["venue_id"] is None or candidate["proposed_organizer_id"] is None:
                     raise ConcertError(409, "Completed concert must retain its venue and organizer")

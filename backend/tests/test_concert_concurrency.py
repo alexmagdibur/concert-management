@@ -14,10 +14,12 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session
 
 from alembic import command
-from app.models.entities import AuditEvent, Concert
+from app.models.entities import AuditEvent, Concert, Contract
 from app.repositories.concert import CONCERT_SCHEDULE_LOCK
 from app.schemas.concert import ConcertCreate, ConcertTransition, ConcertUpdate
+from app.schemas.contract import ContractActivate, ContractCreate
 from app.services.concert import ConcertError, ConcertService
+from app.services.contract import ContractError, ContractService
 
 
 @pytest.fixture
@@ -64,7 +66,7 @@ def compete(engine, data, jobs):
             try:
                 result = job(ConcertService(session), data["MANAGER"]["account"])
                 return 200, result
-            except ConcertError as exc:
+            except (ConcertError, ContractError) as exc:
                 return exc.status, exc.detail
 
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -167,3 +169,53 @@ def test_competing_writes_preserve_schedule_and_versions(race, mode):
             else (4 if mode == "two_reschedules" else (3 if mode == "confirm_vs_reschedule" else 2))
         )
         assert session.scalar(select(func.count()).select_from(AuditEvent)) == baseline + 1
+
+
+def test_concurrent_main_contract_activation(race):
+    engine, data = race
+    actor = data["MANAGER"]["account"]
+    with Session(engine) as session:
+        concert = ConcertService(session).create(ConcertCreate(**payload(data)), actor)
+        contracts = ContractService(session)
+        drafts = [
+            contracts.create(
+                ContractCreate(
+                    number=f"MAIN-{i}",
+                    signed_on=STAMP.date(),
+                    concert_id=concert.id,
+                    counterparty_id=data["party1"],
+                    kind="MAIN_SHOW",
+                    subject="Performance",
+                    amount="123.45",
+                    direction="IN",
+                ),
+                actor,
+            )
+            for i in range(2)
+        ]
+
+    def activation(identity):
+        def run(service, actor_id):
+            return ContractService(service.session).activate(
+                identity, ContractActivate(version=1), actor_id
+            )
+
+        return run
+
+    results = compete(engine, data, [activation(draft.id) for draft in drafts])
+    assert sorted(code for code, _ in results) == [200, 409]
+    with Session(engine) as session:
+        rows = session.scalars(select(Contract)).all()
+        assert sorted((row.status, row.version) for row in rows) == [("ACTIVE", 2), ("DRAFT", 1)]
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(AuditEvent)
+                .where(AuditEvent.object_type == "contract", AuditEvent.action == "ACTIVATE")
+            )
+            == 1
+        )
+        confirmed = ConcertService(session).transition(
+            concert.id, ConcertTransition(version=1), actor, "CONFIRMED"
+        )
+        assert confirmed.status == "CONFIRMED"

@@ -2,14 +2,11 @@ from datetime import timedelta
 from decimal import Decimal
 
 import pytest
-from concert_support import STAMP, add_contract, payload, prepare
-from fastapi.testclient import TestClient
+from concert_support import STAMP, add_contract, payload
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.core.database import get_session
-from app.main import app
 from app.models.entities import (
     Account,
     AccountRole,
@@ -25,37 +22,14 @@ from app.models.entities import (
 )
 
 
-@pytest.fixture
-def api(db):
-    conn, _ = db
-    outer = conn.begin()
-    setup = Session(bind=conn, join_transaction_mode="create_savepoint")
-    data = prepare(setup)
-    setup.commit()
-
-    def override():
-        with Session(bind=conn, join_transaction_mode="create_savepoint") as session:
-            yield session
-
-    app.dependency_overrides[get_session] = override
-    try:
-        with TestClient(app) as client:
-            client.auth = ("test_MANAGER", data["password"])
-            yield client, setup, data
-    finally:
-        app.dependency_overrides.pop(get_session, None)
-        setup.close()
-        outer.rollback()
-
-
 def create(client, data, **values):
     response = client.post("/concert", json=payload(data, **values))
     assert response.status_code == 201, response.text
     return response.json()
 
 
-def test_create_read_edit_and_controlled_response(api):
-    client, session, data = api
+def test_create_read_edit_and_controlled_response(concert_api):
+    client, session, data = concert_api
     row = create(client, data, venue_id=None, proposed_organizer_id=None)
     assert row["status"] == "NEGOTIATING" and row["version"] == 1
     assert row["venue_id"] is None and row["cancel_reason"] is None
@@ -98,8 +72,8 @@ def test_create_read_edit_and_controlled_response(api):
         ("CONFIRMED", "cancel", "CANCELLED"),
     ],
 )
-def test_successful_transitions(api, source, action, target):
-    client, session, data = api
+def test_successful_transitions(concert_api, source, action, target):
+    client, session, data = concert_api
     row = create(client, data)
     entity = session.get(Concert, row["id"])
     entity.status = source
@@ -131,8 +105,8 @@ def test_successful_transitions(api, source, action, target):
         ("CANCELLED", "cancel"),
     ],
 )
-def test_invalid_transitions_are_atomic(api, source, action):
-    client, session, data = api
+def test_invalid_transitions_are_atomic(concert_api, source, action):
+    client, session, data = concert_api
     row = create(client, data)
     session.get(Concert, row["id"]).status = source
     session.commit()
@@ -160,8 +134,8 @@ def test_invalid_transitions_are_atomic(api, source, action):
         "inactive_account",
     ],
 )
-def test_confirmation_requires_real_prerequisites(api, problem):
-    client, session, data = api
+def test_confirmation_requires_real_prerequisites(concert_api, problem):
+    client, session, data = concert_api
     row = create(
         client,
         data,
@@ -213,8 +187,8 @@ def test_confirmation_requires_real_prerequisites(api, problem):
         (2, 4, 200),
     ],
 )
-def test_schedule_overlap_and_adjacency(api, delta_start, delta_end, expected):
-    client, session, data = api
+def test_schedule_overlap_and_adjacency(concert_api, delta_start, delta_end, expected):
+    client, session, data = concert_api
     first = create(client, data)
     second = create(
         client,
@@ -230,8 +204,8 @@ def test_schedule_overlap_and_adjacency(api, delta_start, delta_end, expected):
     assert response.status_code == expected, response.text
 
 
-def test_confirmed_edit_rechecks_schedule_contract_and_venue(api):
-    client, session, data = api
+def test_confirmed_edit_rechecks_schedule_contract_and_venue(concert_api):
+    client, session, data = concert_api
     first = create(client, data)
     second = create(client, data, shift=2)
     for row in [first, second]:
@@ -270,15 +244,15 @@ def test_confirmed_edit_rechecks_schedule_contract_and_venue(api):
         ("responsible_id", None),
     ],
 )
-def test_create_validation(api, field, value):
-    client, session, data = api
+def test_create_validation(concert_api, field, value):
+    client, session, data = concert_api
     assert client.post("/concert", json=payload(data, **{field: value})).status_code == 422
     assert session.scalar(select(func.count()).select_from(Concert)) == 0
 
 
 @pytest.mark.parametrize("field", ["venue_id", "proposed_organizer_id", "responsible_id"])
-def test_missing_references_rejected(api, field):
-    client, _, data = api
+def test_missing_references_rejected(concert_api, field):
+    client, _, data = concert_api
     assert client.post("/concert", json=payload(data, **{field: 999999999})).status_code == 422
     row = create(client, data)
     assert (
@@ -287,8 +261,8 @@ def test_missing_references_rejected(api, field):
     )
 
 
-def test_archived_new_choices_and_responsible_role(api):
-    client, session, data = api
+def test_archived_new_choices_and_responsible_role(concert_api):
+    client, session, data = concert_api
     session.get(Venue, data["venue1"]).archived = True
     session.commit()
     assert client.post("/concert", json=payload(data)).status_code == 409
@@ -307,8 +281,8 @@ def test_archived_new_choices_and_responsible_role(api):
     )
 
 
-def test_version_and_partial_update_validation(api):
-    client, _session, data = api
+def test_version_and_partial_update_validation(concert_api):
+    client, _session, data = concert_api
     row = create(client, data)
     assert (
         client.patch(f"/concert/{row['id']}", json={"version": 1, "name": "New"}).status_code == 200
@@ -339,8 +313,8 @@ def test_version_and_partial_update_validation(api):
     assert client.get(f"/concert/{row['id']}").json()["version"] == 2
 
 
-def test_cancellation_keeps_contracts_finance_and_audit(api):
-    client, session, data = api
+def test_cancellation_keeps_contracts_finance_and_audit(concert_api):
+    client, session, data = concert_api
     row = create(client, data)
     contract = add_contract(session, row["id"], data)
     category = FinanceCategory(
@@ -385,8 +359,8 @@ def test_cancellation_keeps_contracts_finance_and_audit(api):
     assert [event.action for event in events] == ["CREATE", "CONFIRMED", "CANCELLED"]
 
 
-def test_complete_only_after_end(api):
-    client, session, data = api
+def test_complete_only_after_end(concert_api):
+    client, session, data = concert_api
     row = create(client, data, starts_at="2999-01-01T18:00:00Z", ends_at="2999-01-01T20:00:00Z")
     add_contract(session, row["id"], data)
     session.commit()
@@ -394,8 +368,8 @@ def test_complete_only_after_end(api):
     assert client.post(f"/concert/{row['id']}/complete", json={"version": 2}).status_code == 409
 
 
-def test_search_period_city_pagination_and_authorization(api):
-    client, _, data = api
+def test_search_period_city_pagination_and_authorization(concert_api):
+    client, _, data = concert_api
     rows = [
         create(client, data, shift=i, venue_id=(data["venue1"] if i < 2 else data["venue2"]))
         for i in range(3)
@@ -434,8 +408,8 @@ def test_search_period_city_pagination_and_authorization(api):
     assert client.get("/concert", auth=("test_ADMIN", data["password"])).status_code == 403
 
 
-def test_transition_audit_failure_rolls_back_state(api, monkeypatch):
-    client, session, data = api
+def test_transition_audit_failure_rolls_back_state(concert_api, monkeypatch):
+    client, session, data = concert_api
     row = create(client, data)
     add_contract(session, row["id"], data)
     session.commit()
@@ -455,8 +429,8 @@ def test_transition_audit_failure_rolls_back_state(api, monkeypatch):
     assert session.scalar(select(func.count()).select_from(AuditEvent)) == 1
 
 
-def test_only_confirmed_concerts_block_and_cancel_frees_time(api):
-    client, session, data = api
+def test_only_confirmed_concerts_block_and_cancel_frees_time(concert_api):
+    client, session, data = concert_api
     first = create(client, data)
     second = create(client, data)
     for row in [first, second]:
@@ -477,8 +451,8 @@ def test_only_confirmed_concerts_block_and_cancel_frees_time(api):
     )
 
 
-def test_archived_organizer_not_available_for_new_assignment(api):
-    client, session, data = api
+def test_archived_organizer_not_available_for_new_assignment(concert_api):
+    client, session, data = concert_api
     session.get(Counterparty, data["party1"]).archived = True
     session.commit()
     assert client.post("/concert", json=payload(data)).status_code == 409
@@ -491,8 +465,8 @@ def test_archived_organizer_not_available_for_new_assignment(api):
     )
 
 
-def test_city_search_is_unicode_and_historical_venue_stays_linked(api):
-    client, session, data = api
+def test_city_search_is_unicode_and_historical_venue_stays_linked(concert_api):
+    client, session, data = concert_api
     city = "\u041c\u043e\u0441\u043a\u0432\u0430"
     session.get(Venue, data["venue1"]).city = city
     session.commit()
@@ -509,8 +483,8 @@ def test_city_search_is_unicode_and_historical_venue_stays_linked(api):
 
 
 @pytest.mark.parametrize("final_state", ["COMPLETED", "CANCELLED"])
-def test_final_card_corrections_keep_state_contract_and_version_audit(api, final_state):
-    client, session, data = api
+def test_final_card_corrections_keep_state_contract_and_version_audit(concert_api, final_state):
+    client, session, data = concert_api
     row = create(client, data)
     contract = add_contract(session, row["id"], data)
     session.commit()
@@ -558,8 +532,8 @@ def test_final_card_corrections_keep_state_contract_and_version_audit(api, final
         )
 
 
-def test_reassign_to_another_real_active_manager(api):
-    client, session, data = api
+def test_reassign_to_another_real_active_manager(concert_api):
+    client, session, data = concert_api
     manager_role = session.scalar(select(Role).where(Role.code == "MANAGER"))
     session.add(AccountRole(account_id=data["ADMIN"]["account"], role_id=manager_role.id))
     session.commit()
@@ -572,8 +546,8 @@ def test_reassign_to_another_real_active_manager(api):
     )
 
 
-def test_completed_correction_does_not_require_reactivating_closed_contract(api):
-    client, session, data = api
+def test_completed_correction_does_not_require_reactivating_closed_contract(concert_api):
+    client, session, data = concert_api
     row = create(client, data)
     contract = add_contract(session, row["id"], data)
     session.commit()
@@ -589,8 +563,8 @@ def test_completed_correction_does_not_require_reactivating_closed_contract(api)
     assert session.get(Contract, contract.id).status == "CLOSED"
 
 
-def test_zero_budget_round_trip_is_decimal_and_consistent(api):
-    client, session, data = api
+def test_zero_budget_round_trip_is_decimal_and_consistent(concert_api):
+    client, session, data = concert_api
     row = create(client, data, expense_budget="0")
     assert row["expense_budget"] == "0.00"
     assert client.get(f"/concert/{row['id']}").json() == row

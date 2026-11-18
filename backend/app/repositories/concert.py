@@ -7,7 +7,6 @@ from app.models.entities import (
     Account,
     AccountRole,
     Concert,
-    Contract,
     Employee,
     Role,
     Venue,
@@ -82,18 +81,6 @@ class ConcertRepository:
             .with_for_update(read=True)
         )
         return self.session.scalar(statement) is not None
-
-    def active_main_contracts(self, identity: int):
-        return self.session.scalars(
-            select(Contract)
-            .where(
-                Contract.concert_id == identity,
-                Contract.kind == "MAIN_SHOW",
-                Contract.status == "ACTIVE",
-            )
-            .with_for_update(read=True)
-            .execution_options(populate_existing=True)
-        ).all()
 
     def overlapping(self, identity: int, starts_at: datetime, ends_at: datetime):
         return self.session.scalar(

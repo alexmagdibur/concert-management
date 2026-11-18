@@ -1,6 +1,6 @@
 # Concert API: FR040, FR050, UC04
 
-The module uses the existing concert, contract, employee/account/role, venue, counterparty and audit_event tables. No schema changes or fake contract API are introduced. Access uses the existing PostgreSQL-backed HTTP Basic MANAGER dependency.
+The module uses the existing concert, contract, employee/account/role, venue, counterparty and audit_event tables. Access uses the PostgreSQL-backed HTTP Basic MANAGER dependency. Use the [contract API](contract-api.md) to create and activate the main contract before confirming a concert.
 
 ## Routes
 
@@ -69,7 +69,7 @@ GET /concert accepts starts_from (inclusive), starts_before (exclusive), city (l
 
 All concert mutations first acquire pg_advisory_xact_lock(810004) for the single artist, then SELECT FOR UPDATE on an existing concert, and compare expected version using a refreshed row. Confirmation/confirmed editing read actual prerequisite records under shared row locks, check the schedule and save the new version/status plus real actor audit data in one database transaction. Failure rolls everything back. The shared schedule lock also covers cancellation/completion and ordinary edits, so schedule changes cannot race confirmation. Engine isolation is explicitly READ COMMITTED so a waiter sees the winner's commit after acquiring the advisory lock.
 
-Future contract/employee mutation services must follow the same schedule-lock-before-row-lock protocol when changing confirmation prerequisites. Direct SQL writers can bypass application protocols; this task follows NIRS transactional service checks and does not introduce triggers or extra tables.
+Contract mutations use the same schedule-lock-before-row-lock protocol. Future employee mutation services must follow it when changing confirmation prerequisites. Direct SQL writers can bypass application protocols.
 
 ## Errors and tests
 
