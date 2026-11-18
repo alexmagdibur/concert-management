@@ -575,3 +575,20 @@ def test_zero_budget_round_trip_is_decimal_and_consistent(concert_api):
     assert row["expense_budget"] == "0.00"
     assert client.get(f"/concert/{row['id']}").json() == row
     assert session.get(Concert, row["id"]).expense_budget == Decimal("0.00")
+
+
+def test_responsible_options_expose_only_active_managers(concert_api):
+    client, _, data = concert_api
+    path = "/concert/responsibles"
+    response = client.get(path, params={"limit": 1})
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [{"id": data["MANAGER"]["employee"], "full_name": "MANAGER"}],
+        "total": 1,
+        "limit": 1,
+        "offset": 0,
+    }
+    assert client.get(path, headers=NO_SESSION).status_code == 401
+    assert (
+        client.get(path, headers=session_headers("test_ADMIN", data["password"])).status_code == 403
+    )

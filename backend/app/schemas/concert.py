@@ -75,6 +75,11 @@ class ConcertFilter(Input):
         return self
 
 
+class ResponsibleOption(BaseModel):
+    id: int
+    full_name: str
+
+
 class ConcertResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

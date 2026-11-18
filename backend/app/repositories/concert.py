@@ -82,6 +82,20 @@ class ConcertRepository:
         )
         return self.session.scalar(statement) is not None
 
+    def list_responsibles(self, limit: int, offset: int):
+        query = (
+            select(Employee.id, Employee.full_name)
+            .join(Account, Account.employee_id == Employee.id)
+            .join(AccountRole, AccountRole.account_id == Account.id)
+            .join(Role, Role.id == AccountRole.role_id)
+            .where(Employee.active.is_(True), Account.active.is_(True), Role.code == "MANAGER")
+        )
+        total = self.session.scalar(select(func.count()).select_from(query.subquery()))
+        rows = self.session.execute(
+            query.order_by(Employee.full_name, Employee.id).limit(limit).offset(offset)
+        )
+        return rows, total
+
     def overlapping(self, identity: int, starts_at: datetime, ends_at: datetime):
         return self.session.scalar(
             select(Concert.id)

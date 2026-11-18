@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.models.entities import AuditEvent, Contract, Counterparty, Employee, Venue
 from app.repositories.concert import ConcertRepository
 from app.repositories.contract import ContractRepository
+from app.schemas.catalog import Page
 from app.schemas.concert import (
     ConcertCancel,
     ConcertCreate,
@@ -13,6 +14,7 @@ from app.schemas.concert import (
     ConcertResponse,
     ConcertTransition,
     ConcertUpdate,
+    ResponsibleOption,
 )
 
 
@@ -121,6 +123,15 @@ class ConcertService:
             "limit": filters.limit,
             "offset": filters.offset,
         }
+
+    def list_responsibles(self, limit: int, offset: int) -> Page[ResponsibleOption]:
+        rows, total = self.repository.list_responsibles(limit, offset)
+        return Page[ResponsibleOption](
+            items=[ResponsibleOption(id=row.id, full_name=row.full_name) for row in rows],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
 
     def create(self, payload: ConcertCreate, actor_id: int) -> ConcertResponse:
         with self._write():
