@@ -133,6 +133,13 @@ class ContractService:
             self._validate(
                 candidate, new_counterparty=candidate.counterparty_id != row.counterparty_id
             )
+            engagement = self.repository.linked_engagement(identity)
+            if engagement is not None and (
+                candidate.kind != "SERVICE"
+                or candidate.counterparty_id != engagement.counterparty_id
+                or candidate.amount != engagement.agreed_amount
+            ):
+                raise ContractError(409, "Draft changes must preserve the linked engagement")
             for field, value in changes.items():
                 setattr(row, field, value)
             row.version += 1

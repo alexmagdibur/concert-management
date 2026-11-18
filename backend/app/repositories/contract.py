@@ -1,7 +1,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.entities import Contract, Counterparty
+from app.models.entities import Contract, Counterparty, Engagement
 from app.schemas.contract import ContractFilter
 
 
@@ -18,6 +18,9 @@ class ContractRepository:
     def add(self, row: Contract) -> None:
         self.session.add(row)
         self.session.flush()
+
+    def linked_engagement(self, contract_id: int) -> Engagement | None:
+        return self.session.scalar(select(Engagement).where(Engagement.contract_id == contract_id))
 
     def active_main(self, concert_id: int) -> Contract | None:
         return self.session.scalars(
