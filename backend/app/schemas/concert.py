@@ -60,6 +60,7 @@ class ConcertFilter(Input):
     starts_from: AwareDatetime | None = None
     starts_before: AwareDatetime | None = None
     city: str | None = Field(default=None, min_length=1, max_length=100)
+    q: str | None = Field(default=None, min_length=1, max_length=200)
     status: ConcertStatus | None = None
     limit: int = Field(default=20, ge=1, le=100)
     offset: int = Field(default=0, ge=0, le=9223372036854775807)

@@ -47,6 +47,12 @@ class ConcertRepository:
             )
         if filters.status is not None:
             conditions.append(Concert.status == filters.status)
+        if filters.q is not None:
+            conditions.append(
+                func.lower(Concert.name.collate("pg_unicode_fast")).contains(
+                    filters.q.lower(), autoescape=True
+                )
+            )
         statement = (
             select(Concert).outerjoin(Venue, Concert.venue_id == Venue.id).where(*conditions)
         )

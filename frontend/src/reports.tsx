@@ -74,12 +74,44 @@ export function Reports() {
   </section></>
 }
 
-function RankList({ title, items }: { title: string; items: Rank[] }) {
+function RankList({ title, items, scale }: { title: string; items: Rank[]; scale: number }) {
   return <><h3>{title}</h3>{items.length === 0 ? <p>Нет проведённых концертов за период.</p> :
-    <ol>{items.map((item) => <li key={item.concert_id}>
-      <Link to={`/concerts/${item.concert_id}`}>{item.name}</Link> · {showTime(item.starts_at)} · {displayMoney(item.net)}
-    </li>)}</ol>}
+    <ol className="rank-list">{items.map((item) => {
+      const value = Number(item.net)
+      const width = Math.abs(value) / scale * 50
+      return <li key={item.concert_id}>
+        <div className="rank-label"><Link to={`/concerts/${item.concert_id}`}>{item.name}</Link><strong>{displayMoney(item.net)}</strong></div>
+        <div className="rank-track" aria-hidden="true">
+          <span data-series={value < 0 ? 'expenses' : 'income'} style={{ width: `${width}%`, left: `${value < 0 ? 50 - width : 50}%` }} />
+        </div>
+        <small>{showTime(item.starts_at)}</small>
+      </li>
+    })}</ol>}
   </>
+}
+
+function RankingChart({ ranking }: { ranking: Ranking }) {
+  const scale = Math.max(...[...ranking.best, ...ranking.worst].map(({ net }) => Math.abs(Number(net)))) || 1
+  return <div className="ranking-panels">
+    <div><RankList title="Лучшие" items={ranking.best} scale={scale} /></div>
+    <div><RankList title="Худшие" items={ranking.worst} scale={scale} /></div>
+  </div>
+}
+
+function ForecastInterval({ estimate }: { estimate: NonNullable<Forecast['forecast']> }) {
+  const from = Number(estimate.ci_lower)
+  const to = Number(estimate.ci_upper)
+  const point = to === from ? 50 : Math.min(100, Math.max(0, (Number(estimate.expected_expenses) - from) / (to - from) * 100))
+  return <figure className="forecast-chart">
+    <figcaption>95%-й доверительный интервал среднего</figcaption>
+    <div className="forecast-amount"><small>Ожидаемые расходы</small><strong>{displayMoney(estimate.expected_expenses)}</strong></div>
+    <div className="forecast-track" data-single={from === to} aria-hidden="true"><span style={{ left: `${point}%` }} /></div>
+    <div className="forecast-labels">
+      <span>Нижняя граница <strong>{displayMoney(estimate.ci_lower)}</strong></span>
+      <span>Верхняя граница <strong>{displayMoney(estimate.ci_upper)}</strong></span>
+    </div>
+    <p>Интервал характеризует неопределённость среднего. Расходы отдельного концерта могут выходить за эти границы.</p>
+  </figure>
 }
 const reasons: Record<string, string> = {
   budget_required: 'Для прогноза нужен положительный плановый бюджет.',
@@ -95,28 +127,24 @@ export function Analytics() {
     date_from: forecastFilter.date_from, date_to: forecastFilter.date_to, as_of: forecastFilter.as_of,
   }) : null)
   const concerts = useOptions<Concert>('/concert')
+  const planned = concerts.data?.filter(({ status }) => status === 'NEGOTIATING' || status === 'CONFIRMED')
   return <><h1>Аналитика</h1>
     <section><h2>Рейтинг проведённых концертов</h2>
       <Form fields={periodFields()} submit="Показать рейтинг" onSubmit={(data) => setRanking(data as Period)} />
       {rankingFilter && <AsyncState pending={ranking.isPending} error={ranking.error} />}
       {ranking.data && <><p>Концертов в выборке: {ranking.data.count}</p>
-        <RankList title="Лучшие" items={ranking.data.best} /><RankList title="Худшие" items={ranking.data.worst} /></>}
+        {ranking.data.count ? <RankingChart ranking={ranking.data} /> : <p className="panel-empty">Нет проведённых концертов за период.</p>}</>}
     </section>
     <section><h2>Прогноз расходов</h2>
       <AsyncState pending={concerts.isPending} error={concerts.error} />
-      {concerts.data && <Form fields={[
-        required('concert', 'Планируемый концерт', { kind: 'select', options: options(
-          concerts.data.filter(({ status }) => status === 'NEGOTIATING' || status === 'CONFIRMED'),
-          (item) => item.name,
-        ) }), ...periodFields(),
+      {planned?.length === 0 && <p className="panel-empty">Нет планируемых концертов для расчёта прогноза.</p>}
+      {!!planned?.length && <Form fields={[
+        required('concert', 'Планируемый концерт', { kind: 'select', options: options(planned, (item) => item.name) }), ...periodFields(),
       ]} submit="Рассчитать прогноз" onSubmit={(data) => setForecast(data as Period & { concert: number })} />}
       {forecastFilter && <AsyncState pending={forecast.isPending} error={forecast.error} />}
       {forecast.data && <><p>Наблюдений: {forecast.data.n} · Неполных: {forecast.data.incomplete_count}</p>
-        {forecast.data.forecast ? <>
-          <p>Ожидаемые расходы: {displayMoney(forecast.data.forecast.expected_expenses)}</p>
-          <p>95%-й доверительный интервал среднего: {displayMoney(forecast.data.forecast.ci_lower)} — {displayMoney(forecast.data.forecast.ci_upper)}</p>
-          <p>Интервал характеризует неопределённость среднего. Расходы отдельного концерта могут выходить за эти границы.</p>
-        </> : <p>{reasons[forecast.data.reason ?? ''] || forecast.data.message || 'Прогноз недоступен.'}</p>}
+        {forecast.data.forecast ? <ForecastInterval estimate={forecast.data.forecast} />
+          : <p className="panel-empty">{reasons[forecast.data.reason ?? ''] || forecast.data.message || 'Прогноз недоступен.'}</p>}
       </>}
     </section>
   </>

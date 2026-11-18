@@ -12,7 +12,7 @@ export default defineConfig({
     channel: process.env.E2E_BROWSER || undefined,
   },
   webServer: baseURL ? {
-    command: `npm run dev -- --port ${port}`,
+    command: `npm run ${process.env.E2E_PREVIEW === '1' ? 'preview' : 'dev'} -- --port ${port}`,
     url: baseURL,
     reuseExistingServer: false,
   } : undefined,

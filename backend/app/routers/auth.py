@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.core.database import get_session
 from app.core.security import COOKIE_NAME, Identity, require_identity
-from app.schemas.access import Credentials, SessionResponse
+from app.schemas.access import Credentials, PasswordChange, ProfileResponse, SessionResponse
 from app.services.auth import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -47,6 +47,22 @@ def me(identity: Current, response: Response):
 @router.post("/logout", status_code=204)
 def logout(identity: Current, session: DB, settings: Config):
     AuthService(session).logout(identity)
+    return _clear_session_cookie(settings)
+
+
+@router.get("/profile", response_model=ProfileResponse)
+def profile(identity: Current, response: Response, session: DB):
+    response.headers["Cache-Control"] = "no-store"
+    return AuthService(session).profile(identity)
+
+
+@router.post("/change-password", status_code=204)
+def change_password(data: PasswordChange, identity: Current, session: DB, settings: Config):
+    AuthService(session).change_password(identity, data)
+    return _clear_session_cookie(settings)
+
+
+def _clear_session_cookie(settings: Settings) -> Response:
     response = Response(status_code=204, headers={"Cache-Control": "no-store"})
     response.delete_cookie(
         COOKIE_NAME,

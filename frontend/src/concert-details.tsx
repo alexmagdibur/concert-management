@@ -28,6 +28,7 @@ export function Contracts({ concert }: { concert: Concert }) {
   const list = useRead<Page<Contract>>(url('/contract', { concert_id: concert.id, offset }))
   return <section><h2>Договоры</h2>
     <AsyncState pending={parties.isPending || list.isPending} error={parties.error || list.error} />
+    {list.data?.items.length === 0 && <p className="panel-empty">К этому концерту пока не добавлены договоры.</p>}
     {parties.data && <section aria-label="Новый договор"><h3>Новый договор</h3>
       <SaveForm fields={contractFields(parties.data, concert)} path="/contract" submit="Создать договор"
         transform={(body) => ({ ...contractDirection(body), concert_id: concert.id })} onSaved={() => setOffset(0)} />
@@ -56,6 +57,7 @@ export function Engagements({ concert }: { concert: Concert }) {
   return <section><h2>Подрядчики</h2>
     <AsyncState pending={parties.isPending || contracts.isPending || list.isPending}
       error={parties.error || contracts.error || list.error} />
+    {list.data?.items.length === 0 && <p className="panel-empty">К этому концерту пока не добавлены работы подрядчиков.</p>}
     {parties.data && <section><h3>Новая работа</h3>
       <SaveForm fields={[
         required('counterparty_id', 'Подрядчик', { kind: 'select', options: options(parties.data, (item) => item.name) }),
@@ -119,6 +121,7 @@ export function Journal({ concert }: { concert: Concert }) {
   const list = useRead<Page<Entry>>(`/concert/${concert.id}/finance?offset=${offset}`)
   const fields = categories.data && contracts.data ? entryFields(categories.data, contracts.data) : null
   return <section><h2>Финансовый журнал</h2>
+    {list.data?.items.length === 0 && <p className="panel-empty">По этому концерту пока нет финансовых операций.</p>}
     <AsyncState pending={categories.isPending || contracts.isPending || list.isPending}
       error={categories.error || contracts.error || list.error} />
     {fields && <section aria-label="Новая операция"><h3>Новая операция</h3>

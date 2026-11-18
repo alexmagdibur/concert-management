@@ -1,9 +1,10 @@
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 from auth_support import NO_SESSION, session_headers
 from concert_support import STAMP, add_contract, payload
+from sqlalchemy import text
 from test_finance_api import operation, setup_records
 
 from app.models.entities import Concert, FinanceEntry
@@ -142,6 +143,94 @@ def test_report_control_example_and_as_of(concert_api):
         },
     ).json()
     assert inclusive["operations"]["items"] == [fee_refund]
+
+
+def test_dashboard_matches_postgresql_and_concert_reports(concert_api):
+    client, session, data = concert_api
+    first, categories = setup_records(client, data)
+    second = seed_concert(session, data, "Второй концерт", day=40)
+    future_day = (datetime.now(UTC).date() - STAMP.date()).days + 30
+    seed_concert(session, data, "Будущий", day=future_day, status="NEGOTIATING")
+    seed_concert(session, data, "Подтверждённый", day=future_day + 1, status="CONFIRMED")
+    seed_concert(session, data, "Отменённый", day=future_day + 2, status="CANCELLED")
+    original = seed_entry(
+        session, data, first, categories["IN"], "dashboard-in", "150000.00", direction="IN", day=9
+    )
+    seed_entry(session, data, first, categories["OUT"], "dashboard-out", "40000.00", day=9)
+    seed_entry(
+        session,
+        data,
+        first,
+        categories["IN"],
+        "dashboard-refund",
+        "10000.00",
+        original_id=original,
+        day=10,
+    )
+    seed_entry(session, data, second, categories["OUT"], "dashboard-feb", "5000.01", day=40)
+    seed_entry(
+        session,
+        data,
+        second,
+        categories["IN"],
+        "dashboard-void",
+        "500000.00",
+        direction="IN",
+        day=40,
+        status="VOID",
+    )
+    seed_entry(
+        session,
+        data,
+        second,
+        categories["OUT"],
+        "dashboard-draft",
+        "20.00",
+        day=40,
+        status="DRAFT",
+    )
+    session.commit()
+    period = {"date_from": "2020-01-10", "date_to": "2020-02-29"}
+    response = client.get("/dashboard", params=period)
+    assert response.status_code == 200, response.text
+    summary = response.json()
+    assert summary["upcoming_count"] == 2
+    assert summary["months"] == [
+        {"month": "2020-01-01", "income": "150000.00", "expenses": "50000.00", "net": "100000.00"},
+        {"month": "2020-02-01", "income": "0.00", "expenses": "5000.01", "net": "-5000.01"},
+    ]
+    reports = [
+        client.get(
+            f"/concert/{concert}/finance/report", params=period | {"as_of": period["date_to"]}
+        )
+        for concert in (first, second)
+    ]
+    assert all(report.status_code == 200 for report in reports)
+    for field in ("income", "expenses", "net"):
+        assert Decimal(summary[field]) == sum(Decimal(report.json()[field]) for report in reports)
+    income, expenses = session.execute(
+        text("""
+        SELECT sum(amount) FILTER (WHERE direction = 'IN'),
+               sum(amount) FILTER (WHERE direction = 'OUT')
+        FROM finance_entry
+        WHERE status = 'POSTED' AND occurred_on BETWEEN DATE '2020-01-10' AND DATE '2020-02-29'
+    """)
+    ).one()
+    assert (Decimal(summary["income"]), Decimal(summary["expenses"]), Decimal(summary["net"])) == (
+        income,
+        expenses,
+        income - expenses,
+    )
+    empty = client.get("/dashboard", params={"date_from": "2020-03-01", "date_to": "2020-03-31"})
+    assert empty.json()["months"] == [] and empty.json()["net"] == "0.00"
+    assert client.get("/dashboard", params=period | {"date_to": "2022-01-01"}).status_code == 422
+    assert client.get("/dashboard", params=period, headers=NO_SESSION).status_code == 401
+    assert (
+        client.get(
+            "/dashboard", params=period, headers=session_headers("test_ADMIN", data["password"])
+        ).status_code
+        == 403
+    )
 
 
 def test_outgoing_balance_and_overpayment(concert_api):
@@ -341,7 +430,7 @@ def test_report_validation_and_access(concert_api):
 
 def test_combined_search_reuses_parameterized_filters(concert_api):
     client, session, data = concert_api
-    match = seed_concert(session, data, "Matching", day=1)
+    match = seed_concert(session, data, "Матч_%", day=1)
     unrelated = seed_concert(session, data, "Outside", day=40)
     kazan = client.post("/concert", json=payload(data, shift=2, venue_id=data["venue2"]))
     assert kazan.status_code == 201
@@ -355,9 +444,11 @@ def test_combined_search_reuses_parameterized_filters(concert_api):
             "starts_from": "2020-01-01T00:00:00Z",
             "starts_before": "2020-02-01T00:00:00Z",
             "city": "MOSCOW",
+            "q": "МАТЧ_%",
         },
     ).json()
     assert [row["id"] for row in found["items"]] == [match]
+    assert client.get("/concert", params={"q": "' OR 1=1 --"}).json()["total"] == 0
     params = {"number": "_%", "counterparty": "organizer 1"}
     found = client.get("/contract", params=params).json()
     assert [row["concert_id"] for row in found["items"]] == [match]

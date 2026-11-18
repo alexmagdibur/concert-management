@@ -1,11 +1,11 @@
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Date, and_, case, cast, func, or_, select
+from sqlalchemy import Date, DateTime, and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from app.models.entities import Concert, Contract, FinanceEntry
-from app.schemas.report import Period, ReportQuery
+from app.schemas.report import DashboardQuery, Period, ReportQuery
 
 ZERO = Decimal("0.00")
 
@@ -36,6 +36,32 @@ class ReportRepository:
 
     def concert(self, concert_id: int) -> Concert | None:
         return self.session.get(Concert, concert_id)
+
+    def upcoming_count(self) -> int:
+        return self.session.execute(
+            select(func.count())
+            .select_from(Concert)
+            .where(
+                Concert.starts_at >= func.now(),
+                Concert.status.in_(("NEGOTIATING", "CONFIRMED")),
+            )
+        ).scalar_one()
+
+    def monthly_totals(self, period: DashboardQuery):
+        month = cast(func.date_trunc("month", cast(FinanceEntry.occurred_on, DateTime)), Date)
+        return self.session.execute(
+            select(
+                month,
+                _sum_amount(FinanceEntry.direction == "IN"),
+                _sum_amount(FinanceEntry.direction == "OUT"),
+            )
+            .where(
+                FinanceEntry.status == "POSTED",
+                FinanceEntry.occurred_on.between(period.date_from, period.date_to),
+            )
+            .group_by(month)
+            .order_by(month)
+        ).all()
 
     def period_totals(self, concert_id: int, period: Period):
         original = aliased(FinanceEntry)

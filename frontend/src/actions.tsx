@@ -50,21 +50,23 @@ export function Command({ label, path, body }: { label: string; path: string; bo
     <ConfirmDialog open={open} setOpen={setOpen} description={description} title={label} confirm={execute} />}</div>
 }
 
-export function Audit({ kind, id }: { kind: string; id: number }) {
+export function Audit({ kind, id, standalone = false }: { kind: string; id: number; standalone?: boolean }) {
   const [open, setOpen] = useState(false)
   const [offset, setOffset] = useState(0)
   const history = useRead<Page<{ id: number; occurred_at: string; actor_id: number; action: string; reason: string | null; before_data: unknown; after_data: unknown }>>(
-    open ? `/audit/${kind}/${id}?offset=${offset}` : null,
+    open || standalone ? `/audit/${kind}/${id}?offset=${offset}` : null,
   )
-  return <details onToggle={(event) => setOpen(event.currentTarget.open)}>
-    <summary>История изменений</summary>
-    {open && <>
+  const entries = <>
       <AsyncState pending={history.isPending} error={history.error} />
+      {history.data?.items.length === 0 && <p className="panel-empty">Изменений пока нет.</p>}
       {history.data?.items.map((row) => <details key={row.id}>
         <summary>{showTime(row.occurred_at)} · {row.action} · Автор #{row.actor_id}{row.reason && ` · ${row.reason}`}</summary>
         <pre>{JSON.stringify({ до: row.before_data, после: row.after_data }, null, 2)}</pre>
       </details>)}
       <Pager page={history.data} setOffset={setOffset} />
-    </>}
+  </>
+  return standalone ? <section><h2>История изменений</h2>{entries}</section> : <details onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <summary>История изменений</summary>
+    {open && entries}
   </details>
 }

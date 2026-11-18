@@ -18,6 +18,9 @@ class AccountRepository:
     def by_login(self, login: str) -> Account | None:
         return self.session.scalar(select(Account).where(Account.login == login))
 
+    def employee(self, account: Account) -> Employee | None:
+        return self.session.get(Employee, account.employee_id)
+
     def employee_active(self, account: Account) -> bool:
         return bool(
             self.session.scalar(select(Employee.active).where(Employee.id == account.employee_id))

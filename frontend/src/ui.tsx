@@ -7,7 +7,7 @@ export type Option = { value: string | number; label: string }
 export type Field = {
   key: string; label: string; kind?: 'text' | 'password' | 'email' | 'date' | 'datetime-local' | 'integer' | 'money' | 'textarea' | 'select' | 'multi';
   required?: boolean; options?: Option[]; initial?: unknown; min?: number; max?: number;
-  minLength?: number; maxLength?: number; emptyLabel?: string
+  minLength?: number; maxLength?: number; emptyLabel?: string; autoComplete?: string
 }
 export const directionLabels: Record<Direction, string> = { IN: 'Поступление', OUT: 'Расход' }
 export const roleLabels: Record<Role, string> = { MANAGER: 'Менеджер', ADMIN: 'Администратор' }
@@ -18,9 +18,9 @@ export function ErrorMessage({ error }: { error: unknown }) {
   return error ? <p role="alert" className="error"><AlertCircle size={17} aria-hidden="true" /><span>{error instanceof Error ? error.message : String(error)}</span></p> : null
 }
 
-export function Form({ fields, submit, onSubmit, pending, error, onCancel, children }: {
+export function Form({ fields, submit, onSubmit, pending, error, onCancel, children, cancelLabel = 'Закрыть форму' }: {
   fields: Field[]; submit: string; onSubmit: (data: Record<string, unknown>) => void;
-  pending?: boolean; error?: unknown; onCancel?: () => void; children?: ReactNode
+  pending?: boolean; error?: unknown; onCancel?: () => void; children?: ReactNode; cancelLabel?: string
 }) {
   const [validation, setValidation] = useState('')
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -63,14 +63,14 @@ export function Form({ fields, submit, onSubmit, pending, error, onCancel, child
             : field.kind === 'textarea' ? <Textarea {...props} rows={2} />
             : <Input {...props} type={field.kind === 'integer' || field.kind === 'money' ? 'number' : field.kind || 'text'}
                 min={field.min} max={field.max} step={field.kind === 'money' ? '0.01' : undefined}
-                autoComplete={field.kind === 'password' ? 'off' : undefined} />}
+                autoComplete={field.autoComplete ?? (field.kind === 'password' ? 'off' : undefined)} />}
         </label>
       })}
     </fieldset>
     {children}
     <ErrorMessage error={validation || error} />
     <div className="actions"><Button variant="default" type="submit" disabled={pending}>{pending && <LoaderCircle className="spin" size={15} aria-hidden="true" />}{submit}</Button>
-      {onCancel && <Button type="button" onClick={onCancel} disabled={pending}>Закрыть форму</Button>}
+      {onCancel && <Button type="button" onClick={onCancel} disabled={pending}>{cancelLabel}</Button>}
     </div>
   </form>
 }
@@ -108,7 +108,7 @@ export function Status({ code, label }: { code: string; label?: string }) {
   const tone = ['CONFIRMED', 'ACTIVE', 'POSTED', 'COMPLETED', 'AGREED'].includes(code) ? 'good'
     : ['NEGOTIATING', 'PLANNED', 'DRAFT'].includes(code) ? 'wait'
     : ['VOID', 'CANCELLED', 'BLOCKED'].includes(code) ? 'off' : 'neutral'
-  return <span className="status-pill" data-tone={tone}>{label ?? statuses[code] ?? code}</span>
+  return <span className="status-pill" data-tone={tone} data-status={code}>{label ?? statuses[code] ?? code}</span>
 }
 
 export function options<T extends { id: number }>(items: T[] | undefined, format: (item: T) => string): Option[] {

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useOptions, useRead, url, type CatalogRow, type Concert, type Page, type Responsible } from './api'
 import { Audit, Command, SaveForm } from './actions'
 import { Contracts, Engagements, Journal } from './concert-details'
@@ -7,13 +7,15 @@ import { AsyncState, ErrorMessage, Form, Pager, Status, displayMoney, options, r
 import { Button, TableView } from './primitives'
 import { ArrowUpRight, CalendarDays, Plus } from 'lucide-react'
 
-const concertStatuses: Record<Concert['status'], string> = {
+export const concertStatuses: Record<Concert['status'], string> = {
   NEGOTIATING: statuses.NEGOTIATING, CONFIRMED: statuses.CONFIRMED,
   COMPLETED: 'Проведён', CANCELLED: 'Отменён',
 }
 
 export function ConcertList() {
-  const [filters, setFilters] = useState<Record<string, string>>({})
+  const [params, setParams] = useSearchParams()
+  const filters = Object.fromEntries(['q', 'starts_from', 'starts_before', 'city', 'status']
+    .map((key) => [key, params.get(key) ?? '']).filter(([, value]) => value))
   const [offset, setOffset] = useState(0)
   const list = useRead<Page<Concert>>(url('/concert', { ...filters, offset }))
   const rows = list.data?.items ?? []
@@ -37,15 +39,16 @@ export function ConcertList() {
     </div>}
     <section className="results-card">
       <h2>Расписание</h2>
-      <Form fields={[
-        { key: 'starts_from', label: 'Начало периода', kind: 'datetime-local' },
-        { key: 'starts_before', label: 'Конец периода (до)', kind: 'datetime-local' },
-        { key: 'city', label: 'Город площадки', maxLength: 100 },
-        { key: 'status', label: 'Состояние', kind: 'select', emptyLabel: 'Все', options: Object.entries(concertStatuses).map(([value, label]) => ({ value, label })) },
+      <Form key={params.toString()} fields={[
+        { key: 'q', label: 'Название концерта', maxLength: 200, initial: filters.q },
+        { key: 'starts_from', label: 'Начало периода', kind: 'datetime-local', initial: filters.starts_from },
+        { key: 'starts_before', label: 'Конец периода (до)', kind: 'datetime-local', initial: filters.starts_before },
+        { key: 'city', label: 'Город площадки', maxLength: 100, initial: filters.city },
+        { key: 'status', label: 'Состояние', kind: 'select', initial: filters.status, emptyLabel: 'Все', options: Object.entries(concertStatuses).map(([value, label]) => ({ value, label })) },
       ]} submit="Найти концерты" onSubmit={(data) => {
-        setFilters(Object.fromEntries(Object.entries(data).filter((value): value is [string, string] => typeof value[1] === 'string')))
+        setParams(Object.fromEntries(Object.entries(data).filter((value): value is [string, string] => typeof value[1] === 'string')))
         setOffset(0)
-      }} />
+      }} onCancel={Object.keys(filters).length ? () => { setParams({}); setOffset(0) } : undefined} cancelLabel="Сбросить фильтры" />
       <AsyncState pending={list.isPending} error={list.error} />
       {list.data && <TableView label="Расписание концертов" rows={rows} rowKey={(row) => row.id} empty="Концерты не найдены"
         columns={[
@@ -95,24 +98,47 @@ export function NewConcert() {
 
 export function ConcertCard() {
   const { id } = useParams()
+  return <ConcertCardBody key={id} id={id} />
+}
+
+const detailTabs = [
+  { key: 'overview', label: 'Общее' },
+  { key: 'contracts', label: 'Договоры' },
+  { key: 'engagements', label: 'Подрядчики' },
+  { key: 'finance', label: 'Финансовый журнал' },
+  { key: 'history', label: 'История' },
+] as const
+
+function ConcertCardBody({ id }: { id?: string }) {
   const detail = useRead<Concert>(`/concert/${id}`)
   const [editing, setEditing] = useState(false)
-  const [tab, setTab] = useState('Общее')
+  const [params, setParams] = useSearchParams()
+  const tab = detailTabs.find(({ key }) => key === params.get('tab'))?.key ?? 'overview'
   const row = detail.data
+  const venue = useRead<CatalogRow>(row?.venue_id != null && tab === 'overview' ? `/venue/${row.venue_id}` : null)
+  const organizer = useRead<CatalogRow>(row?.proposed_organizer_id != null && tab === 'overview' ? `/counterparty/${row.proposed_organizer_id}` : null)
+  const people = useOptions<Responsible>(row && tab === 'overview' ? '/concert/responsibles' : null)
+  const responsible = people.data?.find(({ id }) => id === row?.responsible_id)
   if (!row) return <AsyncState pending={detail.isPending} error={detail.error} />
   const root = `/concert/${row.id}`
   return <>
     <Link to="/concerts">К списку концертов</Link>
     <div className="page-heading" data-enter><h1>{row.name}</h1><p role="status"><Status code={row.status} label={concertStatuses[row.status]} /></p></div><ErrorMessage error={detail.error} />
-    <div className="actions concert-tabs" aria-label="Разделы концерта">
-      {['Общее', 'Договоры', 'Подрядчики', 'Финансовый журнал'].map((name) =>
-        <Button type="button" key={name} aria-pressed={tab === name} onClick={() => setTab(name)}>{name}</Button>)}
+    <div className="actions concert-tabs" role="group" aria-label="Разделы концерта">
+      {detailTabs.map(({ key, label }) =>
+        <Button type="button" key={key} aria-pressed={tab === key} onClick={() => setParams(key === 'overview' ? {} : { tab: key })}>{label}</Button>)}
       <Link to={`/reports?concert=${row.id}`}>Финансовый отчёт</Link>
     </div>
-    {tab === 'Общее' && <><section>
-      <p>{showTime(row.starts_at)} — {showTime(row.ends_at)}</p>
-      <p>Плановый бюджет: {displayMoney(row.expense_budget)}</p>
-      <p>Площадка: {row.venue_id == null ? 'не выбрана' : `#${row.venue_id}`} · Организатор: {row.proposed_organizer_id == null ? 'не выбран' : `#${row.proposed_organizer_id}`} · Ответственный #{row.responsible_id}</p>
+    {tab === 'overview' && <section>
+      <h2>Основные данные</h2>
+      <dl className="concert-facts">
+        <div><dt>Начало</dt><dd>{showTime(row.starts_at)}</dd></div>
+        <div><dt>Окончание</dt><dd>{showTime(row.ends_at)}</dd></div>
+        <div><dt>Площадка</dt><dd>{venue.data ? `${venue.data.name} · ${venue.data.city}` : row.venue_id == null ? 'Не выбрана' : `#${row.venue_id}`}</dd></div>
+        <div><dt>Организатор</dt><dd>{organizer.data?.name ?? (row.proposed_organizer_id == null ? 'Не выбран' : `#${row.proposed_organizer_id}`)}</dd></div>
+        <div><dt>Ответственный</dt><dd>{responsible?.full_name ?? `#${row.responsible_id}`}</dd></div>
+        <div><dt>Плановый бюджет</dt><dd>{displayMoney(row.expense_budget)}</dd></div>
+      </dl>
       {row.cancel_reason && <p>Причина отмены: {row.cancel_reason}</p>}
       {editing ? <ConcertForm concert={row} onSaved={() => setEditing(false)} />
         : <Button type="button" onClick={() => setEditing(true)}>Изменить концерт</Button>}
@@ -126,9 +152,10 @@ export function ConcertCard() {
           path={root + '/cancel'} submit="Отменить концерт"
           transform={(body) => ({ ...body, version: row.version })} />
       </details>}
-    </section><Audit kind="concert" id={row.id} /></>}
-    {tab === 'Договоры' && <Contracts concert={row} />}
-    {tab === 'Подрядчики' && <Engagements concert={row} />}
-    {tab === 'Финансовый журнал' && <Journal concert={row} />}
+    </section>}
+    {tab === 'contracts' && <Contracts concert={row} />}
+    {tab === 'engagements' && <Engagements concert={row} />}
+    {tab === 'finance' && <Journal concert={row} />}
+    {tab === 'history' && <Audit kind="concert" id={row.id} standalone />}
   </>
 }

@@ -7,9 +7,13 @@ import { Catalog } from './catalog'
 import { ConcertCard, ConcertList, NewConcert } from './concert'
 import { Analytics, Reports } from './reports'
 import { Admin } from './admin'
+import { Profile } from './profile'
+import { Dashboard } from './dashboard'
 import { ErrorMessage } from './ui'
-import { Activity, CalendarDays, ChartNoAxesCombined, ChevronRight, FileText, LogOut, MapPin, Menu, Monitor, Moon, Shield, Sun, Tags, UsersRound } from 'lucide-react'
+import { CalendarDays, ChartNoAxesCombined, ChevronRight, FileText, LogOut, MapPin, Menu, Monitor, Moon, Shield, Sun, Tags, UsersRound } from 'lucide-react'
 import { Button } from './primitives'
+import { LayoutDashboard } from 'lucide-react'
+import { Wordmark } from './wordmark'
 import '@fontsource-variable/inter'
 import '@fontsource-variable/unbounded'
 import './style.css'
@@ -17,6 +21,7 @@ import './style.css'
 const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 15_000 } } })
 const groups = [
   { title: 'Планирование', links: [
+    { path: '/dashboard', label: 'Главная', Icon: LayoutDashboard },
     { path: '/concerts', label: 'Концерты', Icon: CalendarDays },
     { path: '/venues', label: 'Площадки', Icon: MapPin },
     { path: '/counterparties', label: 'Контрагенты', Icon: UsersRound },
@@ -42,7 +47,8 @@ function Application() {
     try { localStorage.setItem('concert-theme', theme) } catch { /* storage may be disabled */ }
   }, [theme])
   return <Auth themeControl={<ThemeControl theme={theme} setTheme={setTheme} />}>
-    {(logout, pending, error) => <Shell logout={logout} pending={pending} error={error} theme={theme} setTheme={setTheme} />}
+    {(logout, pending, error, passwordChanged) => <Shell logout={logout} pending={pending} error={error}
+      passwordChanged={passwordChanged} theme={theme} setTheme={setTheme} />}
   </Auth>
 }
 
@@ -55,13 +61,16 @@ function ThemeControl({ theme, setTheme }: { theme: Theme; setTheme: (value: The
   </label>
 }
 
-function Shell({ logout, pending, error, theme, setTheme }: { logout: () => void; pending: boolean; error: unknown; theme: Theme; setTheme: (value: Theme) => void }) {
+function Shell({ logout, pending, error, passwordChanged, theme, setTheme }: {
+  logout: () => void; pending: boolean; error: unknown; passwordChanged: () => void;
+  theme: Theme; setTheme: (value: Theme) => void
+}) {
   const session = useSession()
   const { pathname } = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
   const manager = session.roles.includes('MANAGER')
   const admin = session.roles.includes('ADMIN')
-  const first = manager ? '/concerts' : admin ? '/users' : '/no-access'
+  const first = manager ? '/dashboard' : admin ? '/users' : '/no-access'
   const navigation = [...(manager ? groups : []), ...(admin ? [{ title: 'Доступ', links: [{ path: '/users', label: 'Пользователи', Icon: Shield }] }] : [])]
   const active = navigation.flatMap(({ links }) => links).find(({ path }) => pathname === path || pathname.startsWith(path + '/'))
   const initials = session.login.slice(0, 2).toLocaleUpperCase('ru')
@@ -69,7 +78,7 @@ function Shell({ logout, pending, error, theme, setTheme }: { logout: () => void
     <a href="#content" className="skip-link">К содержанию</a>
     <aside className={menuOpen ? 'sidebar sidebar-open' : 'sidebar'} id="navigation-panel">
       <NavLink className="brand" to={first} onClick={() => setMenuOpen(false)}>
-        <span className="brand-icon"><Activity size={21} aria-hidden="true" /></span><span>Concert <b>CRM</b></span>
+        <Wordmark />
       </NavLink>
       <nav aria-label="Основная навигация">
         {navigation.map(({ title, links }) => <div className="nav-group" key={title}>
@@ -79,24 +88,28 @@ function Shell({ logout, pending, error, theme, setTheme }: { logout: () => void
           </NavLink>)}
         </div>)}
       </nav>
-      <div className="sidebar-bottom"><span className="avatar" aria-hidden="true">{initials}</span><div>
+      <NavLink to="/profile" aria-label="Мой профиль" title="Мой профиль" className="sidebar-bottom" onClick={() => setMenuOpen(false)}>
+        <span className="avatar" aria-hidden="true">{initials}</span><div>
         <strong>{session.login}</strong><small>{admin && manager ? 'Менеджер · Администратор' : admin ? 'Администратор' : 'Менеджер'}</small>
-      </div></div>
+      </div></NavLink>
     </aside>
     <div className="workspace min-w-0">
       <header className="topbar">
         <div className="breadcrumbs">
           <Button className="menu-toggle" type="button" size="icon" aria-label={menuOpen ? 'Закрыть меню' : 'Открыть меню'}
             aria-expanded={menuOpen} aria-controls="navigation-panel" onClick={() => setMenuOpen(!menuOpen)}><Menu size={18} /></Button>
+          <NavLink to={first} className="compact-brand"><Wordmark /></NavLink>
           <span className="workspace-label">Мой кабинет</span><ChevronRight size={14} aria-hidden="true" />
-          <strong>{active?.label ?? 'Concert CRM'}</strong>
+          <strong>{pathname === '/profile' ? 'Профиль' : active?.label ?? 'Мой кабинет'}</strong>
         </div>
         <div className="top-actions"><ThemeControl theme={theme} setTheme={setTheme} />
           <Button type="button" onClick={logout} disabled={pending}><LogOut size={16} aria-hidden="true" />Выйти</Button>
         </div>
       </header>
       <main id="content" tabIndex={-1} className="app-frame"><ErrorMessage error={error} /><Routes>
+      <Route path="/profile" element={<Profile onPasswordChanged={passwordChanged} />} />
       {manager && <>
+        <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/concerts" element={<ConcertList />} />
         <Route path="/concerts/new" element={<NewConcert />} />
         <Route path="/concerts/:id" element={<ConcertCard />} />

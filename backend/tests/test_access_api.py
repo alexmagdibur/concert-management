@@ -91,6 +91,57 @@ def test_expired_session_and_production_cookie_settings(concert_api):
     )
 
 
+def test_profile_and_password_change(concert_api):
+    client, session, data = concert_api
+    login_name, old = "test_MANAGER", data["password"]
+    new = secrets.token_urlsafe(24)
+    other_session = session_headers(login_name, old)
+    current = {
+        "Cookie": f"{COOKIE_NAME}={client.cookies[COOKIE_NAME]}",
+        "X-CSRF-Token": client.headers["X-CSRF-Token"],
+    }
+    assert client.get("/auth/profile", headers=NO_SESSION).status_code == 401
+    profile = client.get("/auth/profile")
+    employee = session.get(Employee, data["MANAGER"]["employee"])
+    assert profile.headers["Cache-Control"] == "no-store"
+    assert profile.json() == {
+        "login": login_name,
+        "full_name": employee.full_name,
+        "position": employee.position,
+        "email": employee.email,
+        "phone": employee.phone,
+        "roles": ["MANAGER"],
+    }
+    session.commit()
+    path = "/auth/change-password"
+    change = {"current_password": old, "new_password": new}
+    assert client.post(path, json=change, headers=NO_SESSION).status_code == 401
+    assert client.post(path, json=change, headers={"X-CSRF-Token": ""}).status_code == 403
+    wrong = client.post(path, json=change | {"current_password": "incorrect"})
+    assert wrong.status_code == 400
+    assert client.post(path, json=change | {"new_password": old}).status_code == 400
+    invalid = client.post(path, json=change | {"new_password": "tiny-secret"})
+    assert invalid.status_code == 422
+    assert "tiny-secret" not in invalid.text and old not in invalid.text
+    assert client.get("/auth/me", headers=other_session).status_code == 200
+
+    changed = client.post(path, json=change)
+    assert changed.status_code == 204 and "Max-Age=0" in changed.headers["Set-Cookie"]
+    for headers in (current, other_session):
+        assert client.get("/auth/me", headers=headers).status_code == 401
+    assert login(client, login_name, old).status_code == 401
+    account_id = data["MANAGER"]["account"]
+    account = session.get(Account, account_id, populate_existing=True)
+    assert account.session_tokens == {}
+    assert verify_password(new, account.password_hash)
+    event = session.scalars(select(AuditEvent).where(AuditEvent.action == "PASSWORD_CHANGE")).one()
+    assert event.object_type == "account"
+    assert event.object_id == event.actor_id == account_id
+    assert event.before_data is None and event.after_data is None and event.reason is None
+    session.commit()
+    assert login(client, login_name, new).status_code == 200
+
+
 def test_admin_creates_roles_and_audit_with_no_secrets(concert_api):
     client, session, data = concert_api
     admin = session_headers("test_ADMIN", data["password"])

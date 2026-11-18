@@ -1,4 +1,5 @@
 import secrets
+from datetime import UTC, datetime
 from time import time
 
 from fastapi import HTTPException
@@ -13,8 +14,9 @@ from app.core.security import (
     token_digest,
     verify_password,
 )
+from app.models.entities import AuditEvent
 from app.repositories.account import AccountRepository
-from app.schemas.access import Credentials, SessionResponse
+from app.schemas.access import Credentials, PasswordChange, ProfileResponse, SessionResponse
 
 
 class AuthService:
@@ -30,6 +32,52 @@ class AuthService:
             roles=identity.roles,
             csrf_token=csrf_token(identity.token),
         )
+
+    def profile(self, identity: Identity) -> ProfileResponse:
+        employee = self.accounts.employee(identity.account)
+        if employee is None:
+            raise HTTPException(401, "Authentication required")
+        return ProfileResponse(
+            login=identity.account.login,
+            full_name=employee.full_name,
+            position=employee.position,
+            roles=identity.roles,
+            email=employee.email,
+            phone=employee.phone,
+        )
+
+    def change_password(self, identity: Identity, data: PasswordChange) -> None:
+        current = data.current_password.get_secret_value()
+        new = data.new_password.get_secret_value()
+        encoded = identity.account.password_hash
+        if not verify_password(current, encoded):
+            raise HTTPException(400, "Текущий пароль неверен.")
+        if current == new:
+            raise HTTPException(400, "Новый пароль должен отличаться от текущего.")
+        replacement = hash_password(new)
+
+        account = self.accounts.get(identity.account.id, lock=True)
+        if (
+            account is None
+            or not account.active
+            or account.password_hash != encoded
+            or account.session_tokens.get(token_digest(identity.token), 0) <= time()
+            or not self.accounts.employee_active(account)
+        ):
+            raise HTTPException(401, "Authentication required")
+
+        account.password_hash = replacement
+        account.session_tokens = {}
+        self.session.add(
+            AuditEvent(
+                occurred_at=datetime.now(UTC),
+                actor_id=account.id,
+                object_type="account",
+                object_id=account.id,
+                action="PASSWORD_CHANGE",
+            )
+        )
+        self.session.commit()
 
     def login(self, data: Credentials, settings: Settings, previous_cookie: str | None):
         account = self.accounts.by_login(data.login)

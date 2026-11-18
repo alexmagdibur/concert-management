@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -24,6 +24,26 @@ class Period(Input):
 class ReportQuery(Period):
     limit: int = Field(default=20, ge=1, le=100)
     offset: int = Field(default=0, ge=0, le=9223372036854775807)
+
+
+class DashboardQuery(Input):
+    date_from: CalendarDate
+    date_to: CalendarDate
+
+    @model_validator(mode="after")
+    def validate_range(self):
+        if not 0 <= (self.date_to - self.date_from).days <= 366:
+            raise ValueError("Choose a chronological period of at most 367 days")
+        return self
+
+
+class DashboardMonth(FinanceTotals):
+    month: date
+
+
+class DashboardSummary(FinanceTotals):
+    upcoming_count: int
+    months: list[DashboardMonth]
 
 
 class ContractBalance(BaseModel):

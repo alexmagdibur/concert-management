@@ -12,11 +12,52 @@ async function nav(page: Page, name: string) {
   await page.getByRole('navigation').getByRole('link', { name, exact: true }).click()
 }
 
+async function prepareForecastHistory(page: Page) {
+  const { csrf_token } = await (await page.request.get('/api/auth/me')).json()
+  async function post(path: string, data: Record<string, unknown>) {
+    const response = await page.request.post(`/api${path}`, { data, headers: { 'X-CSRF-Token': csrf_token } })
+    expect(response.ok(), `${path}: ${await response.text()}`).toBe(true)
+    return response.json()
+  }
+  const { items: [source] } = await (await page.request.get('/api/concert?q=Контрольный')).json()
+  const { items: [category] } = await (await page.request.get('/api/finance_category?q=TRAVEL')).json()
+  const references = {
+    venue_id: source.venue_id,
+    proposed_organizer_id: source.proposed_organizer_id,
+    responsible_id: source.responsible_id,
+  }
+  for (let i = 1; i <= 10; i += 1) {
+    const date = `2020-02-${String(i).padStart(2, '0')}`
+    const row = await post('/concert', {
+      ...references, name: `Наблюдение ${i}`, starts_at: `${date}T18:00:00Z`,
+      ends_at: `${date}T20:00:00Z`, expense_budget: '100.00',
+    })
+    const contract = await post('/contract', {
+      concert_id: row.id, counterparty_id: references.proposed_organizer_id,
+      number: `FORECAST-${i}`, signed_on: date, subject: 'Выступление',
+      amount: '100.00', direction: 'IN', kind: 'MAIN_SHOW',
+    })
+    await post(`/contract/${contract.id}/activate`, { version: contract.version })
+    const confirmed = await post(`/concert/${row.id}/confirm`, { version: row.version })
+    await post(`/concert/${row.id}/complete`, { version: confirmed.version })
+    await post('/finance', {
+      concert_id: row.id, category_id: category.id, direction: 'OUT', occurred_on: date,
+      amount: `${i * 10}.00`, basis: 'Фактические расходы', request_key: `forecast-history-${i}`,
+    })
+  }
+  await post('/concert', {
+    ...references, name: 'Концерт для прогноза', starts_at: '2099-03-01T18:00:00Z',
+    ends_at: '2099-03-01T20:00:00Z', expense_budget: '1000.00',
+  })
+}
+
 test('manager registers a concert and finances through the browser', async ({ page }) => {
   test.skip(!process.env.E2E_ADMIN_LOGIN || !process.env.E2E_ADMIN_PASSWORD || !process.env.E2E_BASE_URL,
     'Start the isolated PostgreSQL scenario with e2e/run.py')
   const password = randomBytes(24).toString('base64url')
   await page.goto('/')
+  await expect(page).toHaveTitle('STAGEMERIDIAN')
+  await expect(page.locator('.login-brand')).toHaveText('STAGE MERIDIAN')
   await login(page, process.env.E2E_ADMIN_LOGIN!, process.env.E2E_ADMIN_PASSWORD!)
   await expect(page.getByRole('heading', { name: 'Пользователи' })).toBeVisible()
   await expect(page.getByRole('navigation').getByRole('link', { name: 'Концерты' })).toHaveCount(0)
@@ -34,9 +75,12 @@ test('manager registers a concert and finances through the browser', async ({ pa
   expect((await logoutResponse).ok()).toBe(true)
   await expect(page.getByRole('heading', { name: 'Вход' })).toBeVisible()
   await login(page, 'frontend_manager', password)
-  await expect(page.getByRole('heading', { name: 'Концерты', exact: true })).toBeVisible()
-  for (const viewport of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }]) {
+  await expect(page.getByRole('heading', { name: 'Главная', exact: true })).toBeVisible()
+  await expect(page.getByText('За выбранный период нет учтённых операций.')).toBeVisible()
+  await expect(page.getByTestId('dashboard-upcoming')).toHaveText('0')
+  for (const viewport of [{ width: 390, height: 844 }, { width: 1024, height: 768 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport)
+    await expect(page.getByRole('link', { name: 'STAGE MERIDIAN', exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Создать концерт' })).toBeInViewport()
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width)
   }
@@ -129,7 +173,35 @@ test('manager registers a concert and finances through the browser', async ({ pa
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Финансовый отчёт' })).toBeVisible()
 
+  await nav(page, 'Главная')
+  await expect(page.getByTestId('dashboard-net')).toBeVisible()
+  const start = page.getByLabel('Начало периода')
+  const end = page.getByLabel('Конец периода')
+  await start.fill('2020-01-01')
+  await end.fill('2020-01-31')
+  await expect(start).toHaveValue('2020-01-01')
+  await expect(end).toHaveValue('2020-01-31')
+  await page.getByRole('button', { name: 'Применить период' }).click()
+  await expect(page.getByTestId('dashboard-income')).toHaveText('150\u202f000,00 ₽')
+  await expect(page.getByTestId('dashboard-expenses')).toHaveText('40\u202f000,00 ₽')
+  await expect(page.getByTestId('dashboard-net')).toHaveText('110\u202f000,00 ₽')
+  await expect(page.getByRole('img', { name: /График поступлений/ })).toBeVisible()
+  await page.getByText('Точные суммы по месяцам').click()
+  await expect(page.getByRole('region', { name: 'Финансовые показатели по месяцам' })).toContainText('110\u202f000,00 ₽')
+  await page.getByLabel('Перейти к месяцу').fill('2020-01')
+  const calendar = page.getByRole('region', { name: 'Календарь выступлений' })
+  await calendar.getByLabel('Состояние').selectOption('CONFIRMED')
+  await calendar.getByRole('link', { name: /Контрольный концерт/ }).click()
+  await expect(page.getByRole('heading', { name: 'Контрольный концерт' })).toBeVisible()
+  await expect(page.getByText('Тестовый зал · Москва')).toBeVisible()
+  await page.getByRole('button', { name: 'История', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'История изменений' })).toBeVisible()
+  await expect(page.getByText(/Автор #/).first()).toBeVisible()
+
   await nav(page, 'Концерты')
+  await page.getByLabel('Название концерта').fill('КОНТРОЛЬНЫЙ')
+  await page.getByLabel('Город площадки').fill('МОСКВА')
+  await page.getByRole('button', { name: 'Найти концерты' }).click()
   await page.getByRole('link', { name: 'Контрольный концерт' }).click()
   await page.getByRole('button', { name: 'Договоры' }).click()
   await contract.getByLabel('Номер договора').fill('SERVICE-001')
@@ -183,6 +255,49 @@ test('manager registers a concert and finances through the browser', async ({ pa
   await page.getByLabel('Планируемый концерт').selectOption({ label: 'Контрольный концерт' })
   await page.getByRole('button', { name: 'Рассчитать прогноз' }).click()
   await expect(page.getByText('Для прогноза нужно не менее 10 пригодных наблюдений.')).toBeVisible()
+
+  await nav(page, 'Концерты')
+  await page.getByRole('link', { name: 'Контрольный концерт' }).click()
+  await page.getByRole('button', { name: 'Отметить проведение' }).click()
+  await expect(page.getByRole('status')).toHaveText('Проведён')
+  await nav(page, 'Аналитика')
+  const ranking = page.getByRole('heading', { name: 'Рейтинг проведённых концертов' }).locator('..')
+  await ranking.getByLabel('Начало периода').fill('2020-01-01')
+  await ranking.getByLabel('Конец периода').fill('2020-01-31')
+  await ranking.getByLabel('Дата среза').fill('2020-01-31')
+  await ranking.getByRole('button', { name: 'Показать рейтинг' }).click()
+  await expect(ranking.getByRole('heading', { name: 'Лучшие' })).toBeVisible()
+  await expect(ranking.getByRole('link', { name: 'Контрольный концерт' }).first()).toBeVisible()
+  await expect(ranking.getByText('140\u202f000,00 ₽').first()).toBeVisible()
+  await prepareForecastHistory(page)
+  await page.reload()
+  const forecast = page.getByRole('heading', { name: 'Прогноз расходов' }).locator('..')
+  await forecast.getByLabel('Планируемый концерт').selectOption({ label: 'Концерт для прогноза' })
+  await forecast.getByLabel('Начало периода').fill('2020-02-01')
+  await forecast.getByLabel('Конец периода').fill('2020-02-29')
+  await forecast.getByLabel('Дата среза').fill('2020-02-29')
+  await forecast.getByRole('button', { name: 'Рассчитать прогноз' }).click()
+  const interval = forecast.getByRole('figure')
+  await expect(interval).toContainText('550,00 ₽')
+  await expect(interval).toContainText('333,41 ₽')
+  await expect(interval).toContainText('766,59 ₽')
+  await nav(page, 'Главная')
+  await expect(page.getByTestId('dashboard-upcoming')).toHaveText('1')
+  await page.getByRole('link', { name: 'Мой профиль' }).click()
+  await expect(page.getByRole('heading', { name: 'Мой профиль' })).toBeVisible()
+  await expect(page.getByText('Тестовый менеджер', { exact: true })).toBeVisible()
+  const newPassword = randomBytes(24).toString('base64url')
+  await page.getByLabel('Текущий пароль').fill(password)
+  await page.getByLabel('Новый пароль').fill(newPassword)
+  await page.getByLabel('Подтверждение пароля').fill(password)
+  await page.getByRole('button', { name: 'Изменить пароль' }).click()
+  await expect(page.getByRole('alert')).toHaveText('Новый пароль и подтверждение не совпадают.')
+  await page.getByLabel('Подтверждение пароля').fill(newPassword)
+  await page.getByRole('button', { name: 'Изменить пароль' }).click()
+  await expect(page.getByText('Пароль изменён. Войдите с новым паролем.')).toBeVisible()
+  expect((await page.request.get('/api/auth/me')).status()).toBe(401)
+  await login(page, 'frontend_manager', newPassword)
+  await expect(page.getByRole('heading', { name: 'Мой профиль' })).toBeVisible()
   await page.getByRole('button', { name: 'Выйти' }).click()
   await expect(page.getByRole('heading', { name: 'Вход' })).toBeVisible()
   expect((await page.request.get('/api/auth/me')).status()).toBe(401)

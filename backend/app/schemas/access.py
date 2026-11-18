@@ -15,6 +15,7 @@ from app.schemas.concert import Identity
 
 RoleCode = Literal["ADMIN", "MANAGER"]
 LoginName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
+NewPassword = Annotated[SecretStr, Field(min_length=12, max_length=256)]
 
 
 class Credentials(BaseModel):
@@ -29,6 +30,22 @@ class SessionResponse(BaseModel):
     login: str
     roles: list[RoleCode]
     csrf_token: str
+
+
+class ProfileResponse(BaseModel):
+    login: str
+    full_name: str
+    position: str
+    roles: list[RoleCode]
+    email: str | None
+    phone: str | None
+
+
+class PasswordChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: SecretStr = Field(min_length=1, max_length=256)
+    new_password: NewPassword
 
 
 class RoleSelection(BaseModel):
@@ -48,7 +65,7 @@ class AccountCreate(Input, RoleSelection):
     phone: str | None = Field(default=None, min_length=1, max_length=32)
     email: EmailStr | None = Field(default=None, max_length=254)
     login: LoginName
-    password: SecretStr = Field(min_length=12, max_length=256)
+    password: NewPassword
 
 
 class AccountShow(BaseModel):

@@ -10,6 +10,9 @@ from app.schemas.report import (
     ConcertRanking,
     ConcertReport,
     ContractBalance,
+    DashboardMonth,
+    DashboardQuery,
+    DashboardSummary,
     ExpenseForecast,
     ForecastEstimate,
     Period,
@@ -50,6 +53,24 @@ class ReportService:
         if concert is None:
             raise FinanceError(404, "Concert not found")
         return concert
+
+    def dashboard(self, query: DashboardQuery) -> DashboardSummary:
+        months = [
+            DashboardMonth(
+                month=month,
+                income=_money(income),
+                expenses=_money(expenses),
+                net=_money(income - expenses),
+            )
+            for month, income, expenses in self.repository.monthly_totals(query)
+        ]
+        return DashboardSummary(
+            upcoming_count=self.repository.upcoming_count(),
+            income=sum((month.income for month in months), ZERO),
+            expenses=sum((month.expenses for month in months), ZERO),
+            net=sum((month.net for month in months), ZERO),
+            months=months,
+        )
 
     def concert_report(self, concert_id: int, query: ReportQuery) -> ConcertReport:
         concert = self._concert(concert_id)
