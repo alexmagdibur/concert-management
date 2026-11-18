@@ -20,17 +20,17 @@ Cross-row rules explicitly assigned to transactional services by NIRS remain for
 
 ## Docker
 
-Set POSTGRES_PASSWORD and matching DATABASE_URL in the private root .env (see .env.example). Then:
+Set `POSTGRES_PASSWORD` in the private root `.env` (see `.env.example`). Start the stack as
+described in the [README](../README.md#запуск-через-docker-compose). The migration service
+applies Alembic to the internal PostgreSQL instance. To check the schema from the same image:
 
 ```powershell
-docker compose up -d --wait
-cd backend
-.venv/Scripts/python -m alembic upgrade head
-.venv/Scripts/python -m alembic upgrade head
-.venv/Scripts/python -m alembic check
+docker compose run --rm migrate python -m alembic current --check-heads
+docker compose run --rm migrate python -m alembic check
 ```
 
-Compose uses PostgreSQL 18, a named persistent postgres_data volume mounted at /var/lib/postgresql, and loopback host port 5433 by default. Do not remove the volume to restart the service.
+Compose uses PostgreSQL 18 and a persistent `postgres_data` volume mounted at
+`/var/lib/postgresql`. The database listens on an internal Docker network.
 
 ## Tests
 

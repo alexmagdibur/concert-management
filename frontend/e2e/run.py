@@ -26,7 +26,7 @@ def wait_for_api(process: subprocess.Popen, api: str) -> None:
         if process.poll() is not None:
             raise RuntimeError("Backend exited before becoming ready")
         try:
-            with urlopen(api + "/health", timeout=1) as response:
+            with urlopen(api + "/ready", timeout=1) as response:
                 if response.status == 200:
                     return
         except (URLError, TimeoutError):
@@ -118,6 +118,7 @@ def main() -> int:
                 ],
                 cwd=frontend,
                 env=env,
+                check=False,
             ).returncode
         finally:
             process.terminate()

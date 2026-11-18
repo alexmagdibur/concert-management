@@ -91,6 +91,12 @@ test('manager registers a concert and finances through the browser', async ({ pa
   await page.getByLabel('Цветовая тема').selectOption('dark')
   await expect(page.getByRole('navigation').getByRole('link', { name: 'Пользователи' })).toHaveCount(0)
 
+  await page.goto('/concerts?starts_from=invalid-date')
+  await expect(page.getByRole('heading', { name: 'Концерты', exact: true })).toBeVisible()
+  await expect(page.getByRole('alert')).toContainText('starts_from')
+  await page.getByRole('button', { name: 'Сбросить фильтры' }).click()
+  await expect(page.getByText('Концерты не найдены', { exact: true })).toBeVisible()
+
   const denied = await page.request.post('/api/venue', {
     data: { name: 'CSRF forbidden', city: 'Moscow', address: 'Address' },
   })

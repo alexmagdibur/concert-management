@@ -89,6 +89,7 @@ export function Pager<T>({ page, setOffset }: { page?: Page<T>; setOffset: (offs
 
 export function localDateTime(value: string) {
   const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return ''
   return new Date(date.valueOf() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
 }
 function utcTimestamp(value: string) { return new Date(value).toISOString() }

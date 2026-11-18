@@ -1,18 +1,80 @@
+x-backend: &backend
+  image: concert-crm-backend:local
+  build: ./backend
+  environment:
+    APP_NAME: ${APP_NAME:-Concert CRM}
+    APP_ENV: ${APP_ENV:-production}
+    POSTGRES_HOST: postgres
+    POSTGRES_DB: ${POSTGRES_DB:-concert_crm}
+    POSTGRES_USER: ${POSTGRES_USER:-concert_crm}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+    SESSION_COOKIE_SAMESITE: ${SESSION_COOKIE_SAMESITE:-lax}
+    SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-28800}
+
 services:
   postgres:
     image: postgres:18
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-concert_crm}
       POSTGRES_USER: ${POSTGRES_USER:-concert_crm}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    networks: [database]
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 10s
+
+  migrate:
+    <<: *backend
+    restart: "no"
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    networks: [database]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    <<: *backend
+    restart: unless-stopped
+    networks: [database, web]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=4).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-8080}:8080"
+    networks: [web]
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 4 -O /dev/null http://127.0.0.1:8080/index.html && wget -q -T 4 -O /dev/null http://127.0.0.1:8080/api/ready"]
+      interval: 10s
+      timeout: 9s
+      retries: 5
+      start_period: 10s
+
+networks:
+  database:
+    internal: true
+  web:
+
 volumes:
   postgres_data:
