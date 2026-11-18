@@ -2,57 +2,20 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
-from pathlib import Path
 from queue import Queue
 from time import monotonic, sleep
-from uuid import uuid4
 
 import pytest
-from alembic.config import Config
-from concert_support import STAMP, add_contract, payload, prepare
-from sqlalchemy import create_engine, func, select, text
+from concert_support import STAMP, add_contract, payload
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from alembic import command
 from app.models.entities import AuditEvent, Concert, Contract
 from app.repositories.concert import CONCERT_SCHEDULE_LOCK
 from app.schemas.concert import ConcertCreate, ConcertTransition, ConcertUpdate
 from app.schemas.contract import ContractActivate, ContractCreate
 from app.services.concert import ConcertError, ConcertService
 from app.services.contract import ContractError, ContractService
-
-
-@pytest.fixture
-def race(db):
-    control, _ = db
-    original_schema = control.scalar(text("SELECT current_schema()"))
-    control.commit()
-    schema = "race_" + uuid4().hex
-    control.execute(text(f'CREATE SCHEMA "{schema}"'))
-    control.execute(text(f'SET search_path TO "{schema}"'))
-    control.commit()
-    engine = None
-    try:
-        cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
-        cfg.attributes["connection"] = control
-        command.upgrade(cfg, "head")
-        control.commit()
-        engine = create_engine(
-            control.engine.url,
-            isolation_level="READ COMMITTED",
-            connect_args={"options": f"-csearch_path={schema}"},
-        )
-        with Session(engine) as session:
-            data = prepare(session)
-            session.commit()
-        yield engine, data
-    finally:
-        if engine is not None:
-            engine.dispose()
-        control.rollback()
-        control.execute(text(f'SET search_path TO "{original_schema}"'))
-        control.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
-        control.commit()
 
 
 def compete(engine, data, jobs):

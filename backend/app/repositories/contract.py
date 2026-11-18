@@ -1,7 +1,7 @@
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
-from app.models.entities import Contract, Counterparty, Engagement
+from app.models.entities import Contract, Counterparty, Engagement, FinanceEntry
 from app.schemas.contract import ContractFilter
 
 
@@ -21,6 +21,19 @@ class ContractRepository:
 
     def linked_engagement(self, contract_id: int) -> Engagement | None:
         return self.session.scalar(select(Engagement).where(Engagement.contract_id == contract_id))
+
+    def has_posted_operations(self, contract_id: int) -> bool:
+        return bool(
+            self.session.scalar(
+                select(
+                    exists().where(
+                        FinanceEntry.contract_id == contract_id,
+                        FinanceEntry.status == "POSTED",
+                        FinanceEntry.original_id.is_(None),
+                    )
+                )
+            )
+        )
 
     def active_main(self, concert_id: int) -> Contract | None:
         return self.session.scalars(

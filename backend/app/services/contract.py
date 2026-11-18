@@ -140,6 +140,12 @@ class ContractService:
                 or candidate.amount != engagement.agreed_amount
             ):
                 raise ContractError(409, "Draft changes must preserve the linked engagement")
+            if candidate.direction != row.direction and self.repository.has_posted_operations(
+                identity
+            ):
+                raise ContractError(
+                    409, "Cannot change direction of a contract with posted operations"
+                )
             for field, value in changes.items():
                 setattr(row, field, value)
             row.version += 1
